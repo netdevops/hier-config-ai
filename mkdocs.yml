@@ -1,0 +1,8 @@
+site_name: Hierarchical Configuration GPT
+site_url: https://hier-config-gpt.readthedocs.io/
+repo_url: https://github.com/netdevops/hier-config-gpt
+theme:
+  name: readthedocs
+
+nav:
+- Home: index.md
