@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "hier-config-gpt"
+version = "0.1.0"
+description = "\"An enhanced Hierarchical Configuration library that integrates GPT capabilities for advanced configuration analysis and remediation.\""
+authors = ["James Williams <james.williams@packetgeek.net>"]
+license = "Apache 2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4.0"
+hier-config = { git = "https://github.com/netdevops/hier_config.git", branch = "master" }
+pydantic = "^2.9.2"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+pytest-cov = "^6.0.0"
+ruff = "^0.7.4"
+mypy = "^1.13.0"
+pylint = "^3.3.1"
+mkdocs = "^1.6.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
