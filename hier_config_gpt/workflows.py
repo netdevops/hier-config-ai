@@ -1,11 +1,11 @@
 from typing import Optional, Iterator
 
-from hier_config import get_hconfig_fast_load
+from hier_config import get_hconfig_fast_load, WorkflowRemediation
 from hier_config.root import HConfig
 
 from .clients import GPTClient
 from .exceptions import GPTClientInitializationError, RemediationError
-from .models import GPTRemediationContext
+from .models import GPTRemediationContext, GPTRemediationRule
 
 
 class GPTWorkflowRemediation(WorkflowRemediation):
@@ -13,12 +13,21 @@ class GPTWorkflowRemediation(WorkflowRemediation):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.gpt_rules: list[GPTRemediationRule] = []
         self._gpt_remediation_config: Optional[HConfig] = None
         self._gpt_client: Optional[GPTClient] = None
 
     def set_gpt_client(self, gpt_client: GPTClient) -> None:
         """Set GPT client for remediation planning."""
         self._gpt_client = gpt_client
+
+    def clear_gpt_rules(self) -> list[GPTRemediationRule]:
+        """Clear GPT rules."""
+        return self.gpt_rules.clear()
+
+    def add_gpt_rule(self, rule: GPTRemediationRule) -> list[GPTRemediationRule]:
+        """Add GPT rule."""
+        return self.gpt_rules.append(rule)
 
     def gpt_remediation_config(self) -> HConfig:
         """Generate GPT-based remediation plan.
@@ -45,12 +54,11 @@ class GPTWorkflowRemediation(WorkflowRemediation):
 
     def _build_remediation_context(self) -> Iterator[GPTRemediationContext]:
         """Generate context for GPT Prompt."""
-        rules = self.running_config.driver.gpt_remediation_rules
 
-        if not rules:
+        if not self.gpt_rules:
             raise RemediationError("No GPT remediation rules loaded.")
 
-        for rule in rules:
+        for rule in self.gpt_rules:
             running_config = self.running_config.get_children_deep(rule.lineage)
             generated_config = self.generated_config.get_children_deep(rule.lineage)
 

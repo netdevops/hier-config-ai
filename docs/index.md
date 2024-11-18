@@ -10,22 +10,25 @@ The example below demonstrates how to integrate a GPT client for AI-driven remed
 ```python
 import os
 from hier_config import get_hconfig, Platform
-from hier_config.utils import load_device_config
+# from hier_config.utils import load_device_config
 from hier_config.models import MatchRule
 from hier_config_gpt import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationRule GPTRemediationExample
+from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
 from hier_config_gpt.clients import ChatGPTClient
 ```
 
 Necessary modules are imported, including the `GPTWorkflowRemediation` class for handling remediation, as well as a client interface—in this case, `ChatGPTClient` for connecting to GPT. For other GPT models, you can replace `ChatGPTClient` with your own client class.
 
 ```python
-running_config = load_device_config("./tests/fixtures/running_config_acl.conf")
-generated_config = load_device_config("./tests/fixtures/generated_config_acl.conf")
+# running_config = load_device_config("./tests/fixtures/running_config_acl.conf")
+# generated_config = load_device_config("./tests/fixtures/generated_config_acl.conf")
+
+running_config = open("./tests/fixtures/running_config_acl.conf").read()
+generated_config = open("./tests/fixtures/generated_config_acl.conf").read()
 ```
 Here, the current and intended configurations are loaded from files, serving as inputs for comparison and remediation.
 
-2. Initialize `GPTWorkflowRemiation`:
+2. Initialize `GPTWorkflowRemediation`:
 ```python
 wfr = GPTWorkflowRemediation(
         running_config=get_hconfig(Platform.CISCO_IOS, running_config),
@@ -68,7 +71,7 @@ Here:
 
 4. Load AI Remediation Rules:
 ```python
-wfr.running_config.driver.gpt_remediation_rules.append(gpt_rule)
+wfr.add_gpt_rule(gpt_rule)
 ```
 This appends the custom rule to `gpt_remediation_rules`, making it available for GPT to apply.
 

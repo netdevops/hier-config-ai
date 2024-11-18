@@ -20,6 +20,10 @@ mypy = "^1.13.0"
 pylint = "^3.3.1"
 mkdocs = "^1.6.1"
 
+
+[tool.poetry.group.chatgpt.dependencies]
+openai = "^1.54.4"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
