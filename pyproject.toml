@@ -8,8 +8,8 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-hier-config = { git = "https://github.com/netdevops/hier_config.git", branch = "master" }
 pydantic = "^2.9.2"
+hier-config = "^3.2.0"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -23,6 +23,14 @@ mkdocs = "^1.6.1"
 
 [tool.poetry.group.chatgpt.dependencies]
 openai = "^1.54.4"
+
+
+[tool.poetry.group.anthropic.dependencies]
+anthropic = "^0.39.0"
+
+
+[tool.poetry.group.ollama.dependencies]
+ollama = "^0.4.7"
 
 [build-system]
 requires = ["poetry-core"]
