@@ -1,4 +1,4 @@
-from typing import Optional, Iterator
+from typing import Optional, Iterator, Iterable
 
 from hier_config import get_hconfig_fast_load, WorkflowRemediation
 from hier_config.root import HConfig
@@ -38,19 +38,42 @@ class GPTWorkflowRemediation(WorkflowRemediation):
         if not self._gpt_client:
             raise GPTClientInitializationError("No GPT client is initialized.")
 
-        for context in self._build_remediation_context():
-            try:
+        remediation_plans: list[str] = []
+
+        try:
+            for context in self._build_remediation_context():
                 prompt = self._build_gpt_prompt(context)
                 response = self._gpt_client.generate_plan(prompt)
-                self._gpt_remediation_config = get_hconfig_fast_load(
-                    self.running_config.driver, response
-                )
-            except Exception as e:
-                raise RemediationError(
-                    f"Failed to generate remediation plan: {e}"
-                ) from e
+                remediation_plans.append(self._format_plan(response.plan))
+
+            combined_plan = "\n".join(remediation_plans)
+            if not combined_plan.strip():
+                raise RemediationError("GPT remediation plan is empty.")
+
+            self._gpt_remediation_config = get_hconfig_fast_load(
+                self.running_config.driver, combined_plan
+            )
+        except RemediationError:
+            raise
+        except Exception as e:
+            raise RemediationError(
+                f"Failed to generate remediation plan: {e}"
+            ) from e
 
         return self._gpt_remediation_config or HConfig(self.running_config.driver)
+
+    @staticmethod
+    def _format_plan(plan: Iterable[str]) -> str:
+        """Validate and format plan output from GPT client into text."""
+
+        if not isinstance(plan, Iterable) or isinstance(plan, (str, bytes)):
+            raise RemediationError("GPT remediation plan must be a list of commands.")
+
+        commands = [str(command).strip("\n") for command in plan if str(command).strip()]
+        if not commands:
+            raise RemediationError("GPT remediation plan is empty.")
+
+        return "\n".join(commands)
 
     def _build_remediation_context(self) -> Iterator[GPTRemediationContext]:
         """Generate context for GPT Prompt."""

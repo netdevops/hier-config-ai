@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from hier_config_gpt.clients.openai import ChatGPTClient
 from hier_config_gpt.clients.anthropic import ClaudeGPTClient
 from hier_config_gpt.clients.ollama import OllamaGPTClient
+from hier_config_gpt.clients.models import GPTPlanResponse
 
 
 class TestChatGPTClient:
@@ -91,7 +92,7 @@ class TestChatGPTClient:
         result = client.generate_plan("Test prompt")
 
         # Verify result
-        assert result == ["command1", "command2"]
+        assert result.plan == ["command1", "command2"]
 
         # Verify mock was called with correct parameters
         mock_completions.create.assert_called_once_with(
@@ -120,6 +121,14 @@ class TestChatGPTClient:
 
         # Verify the result
         assert result == ["command1", "command2", "command3"]
+
+
+def test_gpt_plan_response_filters_empty_entries():
+    """GPTPlanResponse should strip newlines and drop empty plan entries."""
+
+    response = GPTPlanResponse(plan=["command1\n", "  ", "command2", "", " command3 \n"])
+
+    assert response.plan == ["command1", "command2", " command3 "]
 
 
 class TestClaudeGPTClient:
@@ -196,7 +205,7 @@ class TestClaudeGPTClient:
         result = client.generate_plan("Test prompt")
 
         # Verify result
-        assert result == ["command1", "command2"]
+        assert result.plan == ["command1", "command2"]
 
         # Verify mock was called with correct parameters
         mock_messages.create.assert_called_once_with(
@@ -284,7 +293,7 @@ class TestOllamaGPTClient:
         result = client.generate_plan("Test prompt")
 
         # Verify result
-        assert result == ["command1", "command2"]
+        assert result.plan == ["command1", "command2"]
 
         # Verify mock was called with correct parameters
         mock_client.chat.assert_called_once_with(
@@ -338,5 +347,5 @@ class TestOllamaGPTClient:
         result = client.generate_plan("Test prompt")
 
         # Verify expectations
-        assert len(result) == 1
-        assert "Error generating plan: Connection error" in result[0]
+        assert len(result.plan) == 1
+        assert "Error generating plan: Connection error" in result.plan[0]
