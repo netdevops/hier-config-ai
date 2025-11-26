@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Iterable
 from typing import Any
@@ -52,15 +53,31 @@ def parse_plan_payload(raw_payload: Any) -> dict[str, Any]:
     try:
         parsed = json.loads(text_payload)
     except json.JSONDecodeError as exc:
-        raise ValueError("Provider did not return valid JSON.") from exc
+        plan_text = extract_first_list(text_payload)
+        try:
+            parsed = json.loads(plan_text)
+        except Exception:
+            raise ValueError("Provider did not return valid JSON.") from exc
 
-    if not isinstance(parsed, dict):
+    if isinstance(parsed, list):
+        parsed = {"plan": parsed}
+    elif not isinstance(parsed, dict):
         raise ValueError("Provider JSON payload must be an object.")
 
     if "plan" not in parsed:
         raise ValueError("Provider JSON payload must include a 'plan' field.")
 
     return parsed
+
+
+def extract_first_list(text: str) -> str:
+    """Extract the first JSON-like list from text or raise an error."""
+
+    match = re.search(r"\[[\s\S]*\]", text)
+    if not match:
+        raise ValueError("No JSON list found in payload.")
+
+    return match.group(0)
 
 
 def retry_with_backoff(

@@ -21,17 +21,10 @@ class ClaudeGPTClient(GPTClient):
         self.max_tokens = max_tokens
 
     @staticmethod
-    def process_response(response: Message) -> GPTPlanResponse:
-        """Extract and clean the response content, returning it as a list."""
+    def process_response(response: Message) -> list[str]:
+        """Extract and clean the response content, returning just the plan."""
         payload = parse_plan_payload(response.content)
-        metadata = {
-            "provider": "anthropic",
-            "model": response.model,
-            "usage": response.usage.model_dump() if response.usage else {},
-        }
-        metadata.update(payload.get("metadata", {}))
-
-        return GPTPlanResponse(plan=payload.get("plan", []), metadata=metadata)
+        return payload.get("plan", [])
 
     def chat(self, prompt: str) -> str:
         """Interact with Claude textually."""
@@ -49,21 +42,16 @@ class ClaudeGPTClient(GPTClient):
         response = retry_with_backoff(
             lambda: self.client.messages.create(
                 model=self.model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "Return only valid JSON following the schema {\"plan\": [\"command\"]}.",
-                            },
-                            {"type": "text", "text": prompt},
-                        ],
-                    }
-                ],
+                messages=[{"role": "user", "content": prompt}],
                 max_tokens=self.max_tokens,
                 temperature=self.temp,
             )
         )
 
-        return self.process_response(response)
+        plan = self.process_response(response)
+        metadata = {
+            "provider": "anthropic",
+            "model": response.model,
+            "usage": response.usage.model_dump() if response.usage else {},
+        }
+        return GPTPlanResponse(plan=plan, metadata=metadata)

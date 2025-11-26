@@ -17,18 +17,11 @@ class ChatGPTClient(GPTClient):
         self.max_tokens = max_tokens
 
     @staticmethod
-    def process_response(response: ChatCompletion) -> GPTPlanResponse:
-        """Extract and clean the response content, returning it as a list."""
+    def process_response(response: ChatCompletion) -> list[str]:
+        """Extract and clean the response content, returning just the plan."""
         message = response.choices[0].message
         payload = parse_plan_payload(message.content)
-        metadata = {
-            "provider": "openai",
-            "model": response.model,
-            "usage": response.usage.model_dump() if response.usage else {},
-        }
-        metadata.update(payload.get("metadata", {}))
-
-        return GPTPlanResponse(plan=payload.get("plan", []), metadata=metadata)
+        return payload.get("plan", [])
 
     def chat(self, prompt: str) -> str:
         """Interact with ChatGPT textually."""
@@ -46,17 +39,16 @@ class ChatGPTClient(GPTClient):
         response = retry_with_backoff(
             lambda: self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Return only valid JSON following the schema {\"plan\": [\"command\"]}.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
+                messages=[{"role": "user", "content": prompt}],
                 max_tokens=self.max_tokens,
                 temperature=self.temp,
-                response_format={"type": "json_object"},
             )
         )
 
-        return self.process_response(response)
+        plan = self.process_response(response)
+        metadata = {
+            "provider": "openai",
+            "model": response.model,
+            "usage": response.usage.model_dump() if response.usage else {},
+        }
+        return GPTPlanResponse(plan=plan, metadata=metadata)

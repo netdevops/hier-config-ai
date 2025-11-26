@@ -83,12 +83,6 @@ class GPTWorkflowRemediation(WorkflowRemediation):
             if "\t" in command:
                 raise RemediationError("Commands must not contain tab characters.")
 
-            indent = len(command) - len(command.lstrip(" "))
-            if indent % 4 != 0:
-                raise RemediationError(
-                    "Indented commands must use multiples of four spaces to denote hierarchy."
-                )
-
         return "\n".join(commands)
 
     def _build_remediation_context(self) -> Iterator[GPTRemediationContext]:
@@ -150,7 +144,7 @@ Use the following example as a guide for the format and structure of the command
 - **Do not include** rollback or validation steps. The list should only contain the commands required to implement the generated configuration.
 
 **Example output format:**
-{
+{{
     "plan": [
         "command1",
         "parent_command",
@@ -158,5 +152,5 @@ Use the following example as a guide for the format and structure of the command
         "    child_command2",
         "command2"
     ]
-}
+}}
     """
