@@ -3,7 +3,7 @@ from typing import Dict, Any
 
 import ollama
 
-from .models import GPTClient
+from .models import GPTClient, GPTPlanResponse
 
 
 class OllamaGPTClient(GPTClient):
@@ -51,7 +51,7 @@ class OllamaGPTClient(GPTClient):
         except Exception as e:
             return f"Error communicating with Ollama API: {str(e)}"
 
-    def generate_plan(self, prompt: str) -> list[str]:
+    def generate_plan(self, prompt: str) -> GPTPlanResponse:
         """Generate remediation plan from prompt using Ollama models."""
         try:
             response = self.client.chat(
@@ -60,6 +60,6 @@ class OllamaGPTClient(GPTClient):
                 options={"num_predict": self.max_tokens, "temperature": self.temp},
             )
 
-            return self.process_response(response)
+            return GPTPlanResponse(plan=self.process_response(response))
         except Exception as e:
-            return [f"Error generating plan: {str(e)}"]
+            return GPTPlanResponse(plan=[f"Error generating plan: {str(e)}"])

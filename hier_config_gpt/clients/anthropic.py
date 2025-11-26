@@ -3,7 +3,7 @@ import json
 from anthropic import Anthropic
 from anthropic.types import Message
 
-from .models import GPTClient
+from .models import GPTClient, GPTPlanResponse
 
 
 class ClaudeGPTClient(GPTClient):
@@ -49,7 +49,7 @@ class ClaudeGPTClient(GPTClient):
 
         return response.content[0].text if response.content else "No content available."
 
-    def generate_plan(self, prompt: str) -> list[str]:
+    def generate_plan(self, prompt: str) -> GPTPlanResponse:
         """Generate remediation plan from prompt using Anthropic's Claude model."""
         response = self.client.messages.create(
             model=self.model,
@@ -58,4 +58,4 @@ class ClaudeGPTClient(GPTClient):
             temperature=self.temp,
         )
 
-        return self.process_response(response)
+        return GPTPlanResponse(plan=self.process_response(response))

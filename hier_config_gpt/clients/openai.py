@@ -3,7 +3,7 @@ import json
 from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
-from .models import GPTClient
+from .models import GPTClient, GPTPlanResponse
 
 
 class ChatGPTClient(GPTClient):
@@ -45,7 +45,7 @@ class ChatGPTClient(GPTClient):
 
         return response.choices[0].message.content or "Not content available"
 
-    def generate_plan(self, prompt: str) -> list[str]:
+    def generate_plan(self, prompt: str) -> GPTPlanResponse:
         """Generate remediation plan from prompt using OpenAI's GPT chat model."""
         response = self.client.chat.completions.create(
             model=self.model,
@@ -54,4 +54,4 @@ class ChatGPTClient(GPTClient):
             temperature=self.temp,
         )
 
-        return self.process_response(response)
+        return GPTPlanResponse(plan=self.process_response(response))
