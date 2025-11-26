@@ -1,9 +1,8 @@
-import json
-
 from anthropic import Anthropic
 from anthropic.types import Message
 
 from .models import GPTClient, GPTPlanResponse
+from .utils import parse_plan_payload, retry_with_backoff
 
 
 class ClaudeGPTClient(GPTClient):
@@ -22,21 +21,17 @@ class ClaudeGPTClient(GPTClient):
         self.max_tokens = max_tokens
 
     @staticmethod
-    def process_response(response: Message) -> list[str]:
+    def process_response(response: Message) -> GPTPlanResponse:
         """Extract and clean the response content, returning it as a list."""
-        content = response.content[0].text if response.content else None
+        payload = parse_plan_payload(response.content)
+        metadata = {
+            "provider": "anthropic",
+            "model": response.model,
+            "usage": response.usage.model_dump() if response.usage else {},
+        }
+        metadata.update(payload.get("metadata", {}))
 
-        if content is None:
-            return []
-
-        start = content.find("[")
-        end = content.rfind("]") + 1
-        list_str = content[start:end] if start != -1 and end != -1 else ""
-
-        try:
-            return json.loads(list_str) if list_str else []
-        except json.JSONDecodeError:
-            return []
+        return GPTPlanResponse(plan=payload.get("plan", []), metadata=metadata)
 
     def chat(self, prompt: str) -> str:
         """Interact with Claude textually."""
@@ -51,11 +46,24 @@ class ClaudeGPTClient(GPTClient):
 
     def generate_plan(self, prompt: str) -> GPTPlanResponse:
         """Generate remediation plan from prompt using Anthropic's Claude model."""
-        response = self.client.messages.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=self.max_tokens,
-            temperature=self.temp,
+        response = retry_with_backoff(
+            lambda: self.client.messages.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Return only valid JSON following the schema {\"plan\": [\"command\"]}.",
+                            },
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+                max_tokens=self.max_tokens,
+                temperature=self.temp,
+            )
         )
 
-        return GPTPlanResponse(plan=self.process_response(response))
+        return self.process_response(response)

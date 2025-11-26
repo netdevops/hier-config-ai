@@ -1,11 +1,16 @@
 from typing import Optional, Iterator, Iterable
 
+import logging
+
 from hier_config import get_hconfig_fast_load, WorkflowRemediation
 from hier_config.root import HConfig
 
 from .clients import GPTClient
 from .exceptions import GPTClientInitializationError, RemediationError
 from .models import GPTRemediationContext, GPTRemediationRule
+
+
+logger = logging.getLogger(__name__)
 
 
 class GPTWorkflowRemediation(WorkflowRemediation):
@@ -45,6 +50,7 @@ class GPTWorkflowRemediation(WorkflowRemediation):
                 prompt = self._build_gpt_prompt(context)
                 response = self._gpt_client.generate_plan(prompt)
                 remediation_plans.append(self._format_plan(response.plan))
+                logger.debug("GPT remediation metadata: %s", response.metadata)
 
             combined_plan = "\n".join(remediation_plans)
             if not combined_plan.strip():
@@ -73,6 +79,16 @@ class GPTWorkflowRemediation(WorkflowRemediation):
         if not commands:
             raise RemediationError("GPT remediation plan is empty.")
 
+        for command in commands:
+            if "\t" in command:
+                raise RemediationError("Commands must not contain tab characters.")
+
+            indent = len(command) - len(command.lstrip(" "))
+            if indent % 4 != 0:
+                raise RemediationError(
+                    "Indented commands must use multiples of four spaces to denote hierarchy."
+                )
+
         return "\n".join(commands)
 
     def _build_remediation_context(self) -> Iterator[GPTRemediationContext]:
@@ -98,7 +114,7 @@ class GPTWorkflowRemediation(WorkflowRemediation):
         return f"""
 ### Network Configuration Remediation Plan Generation
 **Objective**
-Generate a network configuration remediation plan as a Python list of commands to be executed *sequentially* for remediation.
+Generate a network configuration remediation plan as a JSON object with a **plan** array of string commands to be executed *sequentially* for remediation.
 
 **Current Configuration:**
 ```
@@ -127,20 +143,20 @@ Use the following example as a guide for the format and structure of the command
 ```
 
 **Instructions:**
-- **Generate a Python list** of commands for the remediation plan.
-- *Follow the format and structure** demonstrated in the Example context above.
-- **Maintain the command hierarchy** by using indentation to denote child commands under parent commands.
+- **Respond ONLY with JSON**, no additional narrative. The root object must include a key named "plan" whose value is an array of strings.
+- **Follow the format and structure** demonstrated in the Example context above.
+- **Maintain the command hierarchy** by using indentation (multiples of four spaces) to denote child commands under parent commands.
 - **Each command should be a string** in the list.
 - **Do not include** rollback or validation steps. The list should only contain the commands required to implement the generated configuration.
 
 **Example output format:**
-```python
-[
-    "command1",
-    "parent_command",
-    "    child_command1",
-    "    child_command2",
-    "command2"
-]
-```
+{
+    "plan": [
+        "command1",
+        "parent_command",
+        "    child_command1",
+        "    child_command2",
+        "command2"
+    ]
+}
     """

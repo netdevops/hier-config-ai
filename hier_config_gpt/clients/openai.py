@@ -1,9 +1,8 @@
-import json
-
 from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
 from .models import GPTClient, GPTPlanResponse
+from .utils import parse_plan_payload, retry_with_backoff
 
 
 class ChatGPTClient(GPTClient):
@@ -18,21 +17,18 @@ class ChatGPTClient(GPTClient):
         self.max_tokens = max_tokens
 
     @staticmethod
-    def process_response(response: ChatCompletion) -> list[str]:
+    def process_response(response: ChatCompletion) -> GPTPlanResponse:
         """Extract and clean the response content, returning it as a list."""
-        content = response.choices[0].message.content
+        message = response.choices[0].message
+        payload = parse_plan_payload(message.content)
+        metadata = {
+            "provider": "openai",
+            "model": response.model,
+            "usage": response.usage.model_dump() if response.usage else {},
+        }
+        metadata.update(payload.get("metadata", {}))
 
-        if content is None:
-            return []
-
-        start = content.find("[")
-        end = content.rfind("]") + 1
-        list_str = content[start:end] if start != -1 and end != -1 else ""
-
-        try:
-            return json.loads(list_str) if list_str else []
-        except json.JSONDecodeError:
-            return []
+        return GPTPlanResponse(plan=payload.get("plan", []), metadata=metadata)
 
     def chat(self, prompt: str) -> str:
         """Interact with ChatGPT textually."""
@@ -47,11 +43,20 @@ class ChatGPTClient(GPTClient):
 
     def generate_plan(self, prompt: str) -> GPTPlanResponse:
         """Generate remediation plan from prompt using OpenAI's GPT chat model."""
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=self.max_tokens,
-            temperature=self.temp,
+        response = retry_with_backoff(
+            lambda: self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Return only valid JSON following the schema {\"plan\": [\"command\"]}.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=self.max_tokens,
+                temperature=self.temp,
+                response_format={"type": "json_object"},
+            )
         )
 
-        return GPTPlanResponse(plan=self.process_response(response))
+        return self.process_response(response)

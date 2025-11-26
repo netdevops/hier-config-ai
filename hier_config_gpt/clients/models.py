@@ -1,12 +1,15 @@
 from abc import ABC, abstractmethod
 
-from pydantic import BaseModel, field_validator
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class GPTPlanResponse(BaseModel):
     """Pydantic model describing the remediation plan returned by GPT clients."""
 
     plan: list[str]
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("plan")
     @classmethod
