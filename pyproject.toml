@@ -1,15 +1,31 @@
 [tool.poetry]
 name = "hier-config-gpt"
 version = "0.1.0"
-description = "\"An enhanced Hierarchical Configuration library that integrates GPT capabilities for advanced configuration analysis and remediation.\""
+description = "An enhanced Hierarchical Configuration library that integrates GPT capabilities for advanced configuration analysis and remediation."
 authors = ["James Williams <james.williams@packetgeek.net>"]
-license = "Apache 2.0"
+license = "Apache-2.0"
 readme = "README.md"
+homepage = "https://github.com/netdevops/hier-config-gpt"
+repository = "https://github.com/netdevops/hier-config-gpt"
+documentation = "https://hier-config-gpt.readthedocs.io/"
+keywords = ["network", "configuration", "automation", "gpt", "llm", "ai", "cisco", "networking"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Networking",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-pydantic = "^2.9.2"
-hier-config = "^3.2.0"
+pydantic = "^2.9.2,<3.0"
+hier-config = "^3.2.0,<4.0"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -19,18 +35,35 @@ ruff = "^0.7.4"
 mypy = "^1.13.0"
 pylint = "^3.3.1"
 mkdocs = "^1.6.1"
+mkdocs-material = "^9.5.0"
 
+
+[tool.poetry.group.chatgpt]
+optional = true
 
 [tool.poetry.group.chatgpt.dependencies]
-openai = "^1.54.4"
+openai = "^1.54.4,<2.0"
 
+
+[tool.poetry.group.anthropic]
+optional = true
 
 [tool.poetry.group.anthropic.dependencies]
-anthropic = "^0.39.0"
+anthropic = "^0.39.0,<1.0"
 
+
+[tool.poetry.group.ollama]
+optional = true
 
 [tool.poetry.group.ollama.dependencies]
-ollama = "^0.4.7"
+ollama = "^0.4.7,<1.0"
+
+
+[tool.poetry.extras]
+openai = ["openai"]
+anthropic = ["anthropic"]
+ollama = ["ollama"]
+all = ["openai", "anthropic", "ollama"]
 
 [build-system]
 requires = ["poetry-core"]

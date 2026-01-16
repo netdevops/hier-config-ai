@@ -9,16 +9,27 @@ class ClaudeGPTClient(GPTClient):
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-3-opus-20240229",
-        temp: float = 0,
+        model: str = "claude-3-5-sonnet-20241022",
+        temp: float = 0.0,
         max_tokens: int = 1024,
+        timeout: float = 60.0,
     ) -> None:
-        """Anthropic GPT Client for generating remediation plans."""
+        """Anthropic Claude Client for generating remediation plans.
+
+        Args:
+            api_key: Anthropic API key for authentication.
+            model: Model identifier (default: claude-3-5-sonnet-20241022).
+                   Other options: claude-3-5-haiku-20241022, claude-3-opus-20240229.
+            temp: Temperature for response randomness (0.0-1.0, default: 0.0).
+            max_tokens: Maximum tokens in the response (default: 1024).
+            timeout: Request timeout in seconds (default: 60.0).
+        """
         super().__init__()
-        self.client = Anthropic(api_key=api_key)
+        self.client = Anthropic(api_key=api_key, timeout=timeout)
         self.model = model
         self.temp = temp
         self.max_tokens = max_tokens
+        self.timeout = timeout
 
     @staticmethod
     def process_response(response: Message) -> list[str]:

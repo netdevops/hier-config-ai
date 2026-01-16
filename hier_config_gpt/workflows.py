@@ -26,13 +26,17 @@ class GPTWorkflowRemediation(WorkflowRemediation):
         """Set GPT client for remediation planning."""
         self._gpt_client = gpt_client
 
-    def clear_gpt_rules(self) -> list[GPTRemediationRule]:
-        """Clear GPT rules."""
-        return self.gpt_rules.clear()
+    def clear_gpt_rules(self) -> None:
+        """Clear all GPT rules from the workflow."""
+        self.gpt_rules.clear()
 
-    def add_gpt_rule(self, rule: GPTRemediationRule) -> list[GPTRemediationRule]:
-        """Add GPT rule."""
-        return self.gpt_rules.append(rule)
+    def add_gpt_rule(self, rule: GPTRemediationRule) -> None:
+        """Add a GPT rule to the workflow.
+
+        Args:
+            rule: The GPTRemediationRule to add to the workflow.
+        """
+        self.gpt_rules.append(rule)
 
     def gpt_remediation_config(self) -> HConfig:
         """Generate GPT-based remediation plan.

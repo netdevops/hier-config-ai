@@ -25,7 +25,7 @@ class GPTClient(ABC):
 
     @abstractmethod
     def chat(self, prompt: str) -> str:
-        """Send a prompt to a GPT and recieve a textual response."""
+        """Send a prompt to a GPT and receive a textual response."""
 
     @abstractmethod
     def generate_plan(self, prompt: str) -> GPTPlanResponse:
