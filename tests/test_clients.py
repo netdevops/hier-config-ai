@@ -1,9 +1,9 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from hier_config_gpt.clients.openai import ChatGPTClient
 from hier_config_gpt.clients.anthropic import ClaudeGPTClient
-from hier_config_gpt.clients.ollama import OllamaGPTClient
 from hier_config_gpt.clients.models import GPTPlanResponse
+from hier_config_gpt.clients.ollama import OllamaGPTClient
+from hier_config_gpt.clients.openai import ChatGPTClient
 
 
 class TestChatGPTClient:
@@ -126,7 +126,9 @@ class TestChatGPTClient:
 def test_gpt_plan_response_filters_empty_entries():
     """GPTPlanResponse should strip newlines and drop empty plan entries."""
 
-    response = GPTPlanResponse(plan=["command1\n", "  ", "command2", "", " command3 \n"])
+    response = GPTPlanResponse(
+        plan=["command1\n", "  ", "command2", "", " command3 \n"]
+    )
 
     assert response.plan == ["command1", "command2", " command3 "]
 

@@ -1,10 +1,19 @@
-import pytest
+import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 from hier_config import HConfig
 from hier_config.models import MatchRule
 from hier_config.platforms import driver_base
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
+
+from hier_config_gpt.models import GPTRemediationExample, GPTRemediationRule
+from hier_config_gpt.workflows import GPTWorkflowRemediation
+
+# Ensure the repository root is importable when running tests directly
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 @pytest.fixture
@@ -134,10 +143,6 @@ def gpt_rule(gpt_remediation_example, match_rule):
 @pytest.fixture
 def remediation_workflow(running_config, generated_config):
     """Create a GPTWorkflowRemediation instance with real HConfig objects."""
-    # Import here to avoid circular imports in fixtures
-    from hier_config_gpt.workflows import GPTWorkflowRemediation
-
-    # Create the workflow with real HConfig objects
     workflow = GPTWorkflowRemediation(
         running_config=running_config,
         generated_config=generated_config,
