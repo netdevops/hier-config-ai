@@ -250,7 +250,9 @@ class TestOllamaGPTClient:
         assert client.temp == 0
 
         # Check client was created correctly
-        mock_ollama.Client.assert_called_once_with(host="http://localhost:12345", timeout=60.0)
+        mock_ollama.Client.assert_called_once_with(
+            host="http://localhost:12345", timeout=60.0
+        )
 
     @patch("hier_config_gpt.clients.ollama.ollama")
     def test_chat(self, mock_ollama):
