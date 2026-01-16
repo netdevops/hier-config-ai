@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -16,7 +15,9 @@ class GPTPlanResponse(BaseModel):
     def strip_and_filter_plan(cls, plan: list[str]) -> list[str]:
         """Ensure plan commands are clean strings without empty entries."""
 
-        filtered_plan = [str(command).strip("\n") for command in plan if str(command).strip()]
+        filtered_plan = [
+            str(command).strip("\n") for command in plan if str(command).strip()
+        ]
         return filtered_plan
 
 

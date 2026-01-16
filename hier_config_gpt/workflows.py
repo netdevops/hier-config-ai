@@ -1,14 +1,12 @@
-from typing import Optional, Iterator, Iterable
-
 import logging
+from typing import Iterable, Iterator, Optional
 
-from hier_config import get_hconfig_fast_load, WorkflowRemediation
+from hier_config import WorkflowRemediation, get_hconfig_fast_load
 from hier_config.root import HConfig
 
 from .clients import GPTClient
 from .exceptions import GPTClientInitializationError, RemediationError
 from .models import GPTRemediationContext, GPTRemediationRule
-
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +64,7 @@ class GPTWorkflowRemediation(WorkflowRemediation):
         except RemediationError:
             raise
         except Exception as e:
-            raise RemediationError(
-                f"Failed to generate remediation plan: {e}"
-            ) from e
+            raise RemediationError(f"Failed to generate remediation plan: {e}") from e
 
         return self._gpt_remediation_config or HConfig(self.running_config.driver)
 
@@ -79,7 +75,9 @@ class GPTWorkflowRemediation(WorkflowRemediation):
         if not isinstance(plan, Iterable) or isinstance(plan, (str, bytes)):
             raise RemediationError("GPT remediation plan must be a list of commands.")
 
-        commands = [str(command).strip("\n") for command in plan if str(command).strip()]
+        commands = [
+            str(command).strip("\n") for command in plan if str(command).strip()
+        ]
         if not commands:
             raise RemediationError("GPT remediation plan is empty.")
 

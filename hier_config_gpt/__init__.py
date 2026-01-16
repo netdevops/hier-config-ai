@@ -6,13 +6,9 @@ capabilities for advanced network configuration analysis and remediation.
 
 __version__ = "0.1.0"
 
-from .workflows import GPTWorkflowRemediation
+from .models import GPTRemediationContext, GPTRemediationExample, GPTRemediationRule
 from .prompt_template import PromptTemplate
-from .models import (
-    GPTRemediationContext,
-    GPTRemediationExample,
-    GPTRemediationRule,
-)
+from .workflows import GPTWorkflowRemediation
 
 __all__ = (
     "GPTRemediationContext",

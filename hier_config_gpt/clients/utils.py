@@ -9,7 +9,6 @@ import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -99,5 +98,10 @@ def retry_with_backoff(
                 raise
 
             sleep_for = backoff_seconds * (2 ** (attempt - 1))
-            logger.warning("Provider call failed (attempt %s/%s), retrying in %.2fs", attempt, retries, sleep_for)
+            logger.warning(
+                "Provider call failed (attempt %s/%s), retrying in %.2fs",
+                attempt,
+                retries,
+                sleep_for,
+            )
             time.sleep(sleep_for)

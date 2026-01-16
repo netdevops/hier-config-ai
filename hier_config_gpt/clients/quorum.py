@@ -10,7 +10,6 @@ from ..exceptions import RemediationError
 from .models import GPTClient, GPTPlanResponse
 from .utils import retry_with_backoff
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -113,7 +112,7 @@ class MultiProviderGPTClient(GPTClient):
         logger.info(
             "Quorum reached: %d/%d providers agreed on the winning plan",
             count,
-            len(plan_strings)
+            len(plan_strings),
         )
 
         winning_response = next(

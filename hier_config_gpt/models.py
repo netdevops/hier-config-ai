@@ -1,6 +1,5 @@
-from pydantic import BaseModel
-
 from hier_config.models import MatchRule
+from pydantic import BaseModel
 
 
 class GPTRemediationExample(BaseModel):

@@ -1,11 +1,12 @@
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from hier_config import HConfig
-from hier_config_gpt.workflows import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationContext, GPTRemediationExample
+
 from hier_config_gpt.clients.models import GPTPlanResponse
 from hier_config_gpt.exceptions import GPTClientInitializationError, RemediationError
+from hier_config_gpt.models import GPTRemediationContext, GPTRemediationExample
+from hier_config_gpt.workflows import GPTWorkflowRemediation
 
 
 class TestGPTWorkflowRemediation:
@@ -170,7 +171,9 @@ class TestGPTWorkflowRemediation:
             ),
         ]
 
-        with patch.object(remediation_workflow, "_build_remediation_context") as mock_ctx:
+        with patch.object(
+            remediation_workflow, "_build_remediation_context"
+        ) as mock_ctx:
             mock_ctx.return_value = iter(contexts)
             remediation_workflow.set_gpt_client(mock_client)
             remediation_workflow.add_gpt_rule(gpt_rule)

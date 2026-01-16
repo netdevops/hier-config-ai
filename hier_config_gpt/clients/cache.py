@@ -40,7 +40,11 @@ class ResponseCache:
 
         if self.enabled:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            logger.debug("Response cache initialized at %s (TTL: %ds)", self.cache_dir, ttl_seconds)
+            logger.debug(
+                "Response cache initialized at %s (TTL: %ds)",
+                self.cache_dir,
+                ttl_seconds,
+            )
 
     def _get_cache_key(self, prompt: str, model: str) -> str:
         """Generate a cache key from prompt and model."""
@@ -80,7 +84,9 @@ class ResponseCache:
             age = time.time() - cached_time
 
             if age > self.ttl_seconds:
-                logger.debug("Cache expired for key %s (age: %.1fs)", cache_key[:8], age)
+                logger.debug(
+                    "Cache expired for key %s (age: %.1fs)", cache_key[:8], age
+                )
                 cache_path.unlink()  # Delete expired cache
                 return None
 
