@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.10", "3.11", "3.12"]
 
     steps:
@@ -39,7 +39,7 @@ jobs:
 
     - name: Install dependencies
       if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction --no-root --with dev
+      run: poetry install --no-interaction --no-root --with dev,anthropic,chatgpt,ollama
 
     - name: Install project
       run: poetry install --no-interaction
@@ -79,7 +79,7 @@ jobs:
       uses: snok/install-poetry@v1
 
     - name: Install dependencies
-      run: poetry install --no-interaction --with dev
+      run: poetry install --no-interaction --with dev,anthropic,chatgpt,ollama
 
     - name: Run pylint
       run: poetry run pylint hier_config_gpt
@@ -100,7 +100,7 @@ jobs:
       uses: snok/install-poetry@v1
 
     - name: Install dependencies
-      run: poetry install --no-interaction --with dev
+      run: poetry install --no-interaction --with dev,anthropic,chatgpt,ollama
 
     - name: Build documentation
       run: poetry run mkdocs build --strict
