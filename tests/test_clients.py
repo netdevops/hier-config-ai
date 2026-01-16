@@ -17,10 +17,11 @@ class TestChatGPTClient:
         # Check attributes were set correctly
         assert client.model == "gpt-4"
         assert client.max_tokens == 1000
-        assert client.temp == 0
+        assert client.temp == 0.0
+        assert client.timeout == 60.0
 
-        # Check constructor was called
-        mock_openai_class.assert_called_once_with(api_key="test-key")
+        # Check constructor was called with timeout
+        mock_openai_class.assert_called_once_with(api_key="test-key", timeout=60.0)
 
     @patch("hier_config_gpt.clients.openai.OpenAI")
     def test_chat(self, mock_openai_class):
@@ -47,19 +48,19 @@ class TestChatGPTClient:
 
         mock_openai_class.return_value = mock_client
 
-        # Create client and call method
+        # Create client and call method (uses default gpt-4o model)
         client = ChatGPTClient(api_key="test-key")
         result = client.chat("Test prompt")
 
         # Verify result
         assert result == "Test response"
 
-        # Verify mock was called with correct parameters
+        # Verify mock was called with correct parameters (default model is gpt-4o)
         mock_completions.create.assert_called_once_with(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[{"role": "user", "content": "Test prompt"}],
             max_tokens=1000,
-            temperature=0,
+            temperature=0.0,
         )
 
     @patch("hier_config_gpt.clients.openai.OpenAI")
@@ -87,19 +88,19 @@ class TestChatGPTClient:
 
         mock_openai_class.return_value = mock_client
 
-        # Create client and call method
+        # Create client and call method (uses default gpt-4o model)
         client = ChatGPTClient(api_key="test-key")
         result = client.generate_plan("Test prompt")
 
         # Verify result
         assert result.plan == ["command1", "command2"]
 
-        # Verify mock was called with correct parameters
+        # Verify mock was called with correct parameters (default model is gpt-4o)
         mock_completions.create.assert_called_once_with(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[{"role": "user", "content": "Test prompt"}],
             max_tokens=1000,
-            temperature=0,
+            temperature=0.0,
         )
 
     def test_process_response(self):
@@ -140,10 +141,11 @@ class TestClaudeGPTClient:
         # Check attributes were set correctly
         assert client.model == "claude-3-opus-20240229"
         assert client.max_tokens == 1024
-        assert client.temp == 0
+        assert client.temp == 0.0
+        assert client.timeout == 60.0
 
-        # Check constructor was called
-        mock_anthropic_class.assert_called_once_with(api_key="test-key")
+        # Check constructor was called with timeout
+        mock_anthropic_class.assert_called_once_with(api_key="test-key", timeout=60.0)
 
     @patch("hier_config_gpt.clients.anthropic.Anthropic")
     def test_chat(self, mock_anthropic_class):
@@ -165,19 +167,19 @@ class TestClaudeGPTClient:
 
         mock_anthropic_class.return_value = mock_client
 
-        # Create client and call method
+        # Create client and call method (uses default claude-3-5-sonnet-20241022 model)
         client = ClaudeGPTClient(api_key="test-key")
         result = client.chat("Test prompt")
 
         # Verify result
         assert result == "Test response"
 
-        # Verify mock was called with correct parameters
+        # Verify mock was called with correct parameters (default model is claude-3-5-sonnet-20241022)
         mock_messages.create.assert_called_once_with(
-            model="claude-3-opus-20240229",
+            model="claude-3-5-sonnet-20241022",
             messages=[{"role": "user", "content": "Test prompt"}],
             max_tokens=1024,
-            temperature=0,
+            temperature=0.0,
         )
 
     @patch("hier_config_gpt.clients.anthropic.Anthropic")
@@ -200,19 +202,19 @@ class TestClaudeGPTClient:
 
         mock_anthropic_class.return_value = mock_client
 
-        # Create client and call method
+        # Create client and call method (uses default claude-3-5-sonnet-20241022 model)
         client = ClaudeGPTClient(api_key="test-key")
         result = client.generate_plan("Test prompt")
 
         # Verify result
         assert result.plan == ["command1", "command2"]
 
-        # Verify mock was called with correct parameters
+        # Verify mock was called with correct parameters (default model is claude-3-5-sonnet-20241022)
         mock_messages.create.assert_called_once_with(
-            model="claude-3-opus-20240229",
+            model="claude-3-5-sonnet-20241022",
             messages=[{"role": "user", "content": "Test prompt"}],
             max_tokens=1024,
-            temperature=0,
+            temperature=0.0,
         )
 
     def test_process_response(self):
@@ -243,10 +245,11 @@ class TestOllamaGPTClient:
         # Check attributes were set correctly
         assert client.model == "llama3"
         assert client.max_tokens == 1024
-        assert client.temp == 0
+        assert client.temp == 0.0
+        assert client.timeout == 60.0
 
-        # Check client was created correctly
-        mock_ollama.Client.assert_called_once_with(host="http://localhost:12345")
+        # Check client was created correctly with timeout
+        mock_ollama.Client.assert_called_once_with(host="http://localhost:12345", timeout=60.0)
 
     @patch("hier_config_gpt.clients.ollama.ollama")
     def test_chat(self, mock_ollama):
@@ -260,18 +263,18 @@ class TestOllamaGPTClient:
 
         mock_ollama.Client.return_value = mock_client
 
-        # Create client and call method
+        # Create client and call method (uses default llama3.2 model)
         client = OllamaGPTClient()
         result = client.chat("Test prompt")
 
         # Verify result
         assert result == "Test response"
 
-        # Verify mock was called with correct parameters
+        # Verify mock was called with correct parameters (default model is llama3.2)
         mock_client.chat.assert_called_once_with(
-            model="llama3",
+            model="llama3.2",
             messages=[{"role": "user", "content": "Test prompt"}],
-            options={"num_predict": 1024, "temperature": 0},
+            options={"num_predict": 1024, "temperature": 0.0},
         )
 
     @patch("hier_config_gpt.clients.ollama.ollama")
@@ -288,18 +291,18 @@ class TestOllamaGPTClient:
 
         mock_ollama.Client.return_value = mock_client
 
-        # Create client and call method
+        # Create client and call method (uses default llama3.2 model)
         client = OllamaGPTClient()
         result = client.generate_plan("Test prompt")
 
         # Verify result
         assert result.plan == ["command1", "command2"]
 
-        # Verify mock was called with correct parameters
+        # Verify mock was called with correct parameters (default model is llama3.2)
         mock_client.chat.assert_called_once_with(
-            model="llama3",
+            model="llama3.2",
             messages=[{"role": "user", "content": "Test prompt"}],
-            options={"num_predict": 1024, "temperature": 0},
+            options={"num_predict": 1024, "temperature": 0.0},
         )
 
     def test_process_response(self):
@@ -336,16 +339,17 @@ class TestOllamaGPTClient:
     @patch("hier_config_gpt.clients.ollama.ollama")
     def test_generate_plan_exception_handling(self, mock_ollama):
         """Test OllamaGPTClient exception handling in generate_plan method"""
+        import pytest
+
         # Configure the mock to raise an exception
         mock_client = MagicMock()
         mock_client.chat.side_effect = Exception("Connection error")
 
         mock_ollama.Client.return_value = mock_client
 
-        # Create client and call method
+        # Create client and call method - should raise exception after retries
         client = OllamaGPTClient()
-        result = client.generate_plan("Test prompt")
 
-        # Verify expectations
-        assert len(result.plan) == 1
-        assert "Error generating plan: Connection error" in result.plan[0]
+        # The generate_plan method now properly raises exceptions after retries
+        with pytest.raises(Exception, match="Connection error"):
+            client.generate_plan("Test prompt")
