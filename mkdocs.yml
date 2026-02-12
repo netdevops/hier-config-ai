@@ -63,6 +63,7 @@ nav:
     - LLM Clients: user-guide/clients.md
     - Advanced Features: user-guide/advanced-features.md
     - Prompt Templates: user-guide/prompt-templates.md
+    - Error-Handling for SDK: user-guide/error-handling-skd.md
   - Examples: examples.md
   - API Reference: api-reference.md
   - Contributing: contributing.md
