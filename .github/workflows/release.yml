@@ -1,0 +1,30 @@
+name: Release
+
+# Publishes to PyPI when a GitHub release is published. Uses the
+# "published" type (not "created"): "created" never fires for draft
+# releases that are later published, and Prepare Release creates drafts.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+    # Checks out the release tag ref (github.ref for release events).
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+    - name: Publish to PyPI
+      run: |
+        poetry config pypi-token.pypi "${{ secrets.PYPI_TOKEN }}"
+        poetry publish --build
