@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "hier-config-gpt"
-version = "0.1.0"
+version = "0.1.1a0"
 description = "An enhanced Hierarchical Configuration library that integrates GPT capabilities for advanced configuration analysis and remediation."
 authors = ["James Williams <james.williams@packetgeek.net>"]
 license = "Apache-2.0"
