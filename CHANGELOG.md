@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Ported hier-config's development, testing, and linting standards: strict
+  ruff (`select = ["ALL"]` with preview), mypy strict (pydantic plugin),
+  pyright strict, pylint (with `pylint_pydantic`), yamllint, and flynt,
+  all orchestrated by the new parallel `scripts/build.py` runner
+  (`poetry run python scripts/build.py lint-and-test`)
+- Enforced 95% test coverage gate (suite currently covers 99%) with new
+  flat, fully type-annotated tests for the cache, cached client, rate
+  limiter, rate-limited client, quorum client, prompt template, and client
+  utility helpers
+- CI now runs the full lint suite and coverage-gated tests on Python
+  3.10-3.14 with all checks blocking (mypy/pylint were previously
+  non-blocking)
+- `parse_plan_commands()` helper in `hier_config_gpt.clients.utils` for
+  extracting a typed command list from provider payloads
 - Response caching functionality to reduce API costs and improve performance
 - Rate limiting using token bucket algorithm
 - Configurable timeout support for all LLM clients
@@ -32,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated default Ollama model to `llama3.2`
 - Fixed return type bugs in `clear_gpt_rules()` and `add_gpt_rule()` methods
 - Fixed lambda closure bug in quorum.py that could cause issues during retries
+- `OllamaGPTClient.process_response()` now takes the typed
+  `ollama.ChatResponse` instead of a plain dict, matching what the ollama
+  SDK (>=0.4) actually returns
+- Payloads of the wrong JSON type now raise `TypeError` instead of
+  `ValueError` from the plan-parsing helpers (wrong payload/plan type);
+  behavior for missing or invalid JSON is unchanged
+- `GPTWorkflowRemediation` now exposes an explicit
+  `(running_config, generated_config, plugins=())` signature instead of
+  `*args/**kwargs`
 - Improved quorum logic to require majority (>50%) instead of just count > 1
 - Enhanced error messages throughout the codebase for better debugging
 - Improved docstrings for all client classes with parameter descriptions

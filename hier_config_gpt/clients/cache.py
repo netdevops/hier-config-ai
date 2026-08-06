@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_timestamp(raw_timestamp: object) -> float:
+    """Convert a cached timestamp value into a float, defaulting to zero."""
+    if isinstance(raw_timestamp, int | float):
+        return float(raw_timestamp)
+    return 0.0
 
 
 class ResponseCache:
@@ -20,8 +28,9 @@ class ResponseCache:
 
     def __init__(
         self,
-        cache_dir: Optional[Path] = None,
+        cache_dir: Path | None = None,
         ttl_seconds: float = 3600.0,
+        *,
         enabled: bool = True,
     ) -> None:
         """Initialize the response cache.
@@ -30,6 +39,7 @@ class ResponseCache:
             cache_dir: Directory for cache files (default: ~/.hier_config_gpt/cache).
             ttl_seconds: Time-to-live for cache entries in seconds (default: 3600).
             enabled: Whether caching is enabled (default: True).
+
         """
         if cache_dir is None:
             cache_dir = Path.home() / ".hier_config_gpt" / "cache"
@@ -46,7 +56,8 @@ class ResponseCache:
                 ttl_seconds,
             )
 
-    def _get_cache_key(self, prompt: str, model: str) -> str:
+    @staticmethod
+    def _get_cache_key(prompt: str, model: str) -> str:
         """Generate a cache key from prompt and model."""
         content = f"{model}:{prompt}"
         return hashlib.sha256(content.encode()).hexdigest()
@@ -55,7 +66,20 @@ class ResponseCache:
         """Get the file path for a cache key."""
         return self.cache_dir / f"{cache_key}.json"
 
-    def get(self, prompt: str, model: str) -> Optional[dict[str, Any]]:
+    @staticmethod
+    def _read_cache_file(cache_path: Path) -> dict[str, object] | None:
+        """Read a cache file, returning None when unreadable or malformed."""
+        try:
+            data: object = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to read cache file %s: %s", cache_path, exc)
+            return None
+
+        if isinstance(data, dict):
+            return cast("dict[str, object]", data)
+        return None
+
+    def get(self, prompt: str, model: str) -> dict[str, Any] | None:
         """Retrieve a cached response if available and not expired.
 
         Args:
@@ -64,6 +88,7 @@ class ResponseCache:
 
         Returns:
             Cached response data or None if not found or expired.
+
         """
         if not self.enabled:
             return None
@@ -75,27 +100,22 @@ class ResponseCache:
             logger.debug("Cache miss for key %s", cache_key[:8])
             return None
 
-        try:
-            with cache_path.open("r") as f:
-                cached_data = json.load(f)
-
-            # Check if expired
-            cached_time = cached_data.get("timestamp", 0)
-            age = time.time() - cached_time
-
-            if age > self.ttl_seconds:
-                logger.debug(
-                    "Cache expired for key %s (age: %.1fs)", cache_key[:8], age
-                )
-                cache_path.unlink()  # Delete expired cache
-                return None
-
-            logger.info("Cache hit for key %s (age: %.1fs)", cache_key[:8], age)
-            return cached_data.get("response")
-
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning("Failed to read cache file %s: %s", cache_path, e)
+        cached_data = self._read_cache_file(cache_path)
+        if cached_data is None:
             return None
+
+        age = time.time() - _coerce_timestamp(cached_data.get("timestamp", 0))
+        if age > self.ttl_seconds:
+            logger.debug("Cache expired for key %s (age: %.1fs)", cache_key[:8], age)
+            with contextlib.suppress(OSError):
+                cache_path.unlink()  # Delete expired cache
+            return None
+
+        logger.info("Cache hit for key %s (age: %.1fs)", cache_key[:8], age)
+        response = cached_data.get("response")
+        if isinstance(response, dict):
+            return cast("dict[str, Any]", response)
+        return None
 
     def set(self, prompt: str, model: str, response: dict[str, Any]) -> None:
         """Store a response in the cache.
@@ -104,6 +124,7 @@ class ResponseCache:
             prompt: The prompt text.
             model: The model identifier.
             response: The response data to cache.
+
         """
         if not self.enabled:
             return
@@ -119,58 +140,66 @@ class ResponseCache:
         }
 
         try:
-            with cache_path.open("w") as f:
-                json.dump(cached_data, f, indent=2)
+            cache_path.write_text(json.dumps(cached_data, indent=2), encoding="utf-8")
+        except OSError as exc:
+            logger.warning("Failed to write cache file %s: %s", cache_path, exc)
+        else:
             logger.debug("Cached response for key %s", cache_key[:8])
-        except OSError as e:
-            logger.warning("Failed to write cache file %s: %s", cache_path, e)
+
+    @staticmethod
+    def _delete_cache_file(cache_file: Path) -> bool:
+        """Delete one cache file, returning True on success."""
+        try:
+            cache_file.unlink()
+        except OSError as exc:
+            logger.warning("Failed to delete cache file %s: %s", cache_file, exc)
+            return False
+        return True
 
     def clear(self) -> int:
         """Clear all cache entries.
 
         Returns:
             Number of cache files deleted.
+
         """
         if not self.enabled or not self.cache_dir.exists():
             return 0
 
-        count = 0
-        for cache_file in self.cache_dir.glob("*.json"):
-            try:
-                cache_file.unlink()
-                count += 1
-            except OSError as e:
-                logger.warning("Failed to delete cache file %s: %s", cache_file, e)
+        count = sum(
+            self._delete_cache_file(cache_file)
+            for cache_file in self.cache_dir.glob("*.json")
+        )
 
         logger.info("Cleared %d cache entries", count)
         return count
+
+    def _cleanup_file_if_expired(self, cache_file: Path, current_time: float) -> bool:
+        """Delete one cache file when expired, returning True when deleted."""
+        cached_data = self._read_cache_file(cache_file)
+        if cached_data is None:
+            return False
+
+        age = current_time - _coerce_timestamp(cached_data.get("timestamp", 0))
+        if age > self.ttl_seconds:
+            return self._delete_cache_file(cache_file)
+        return False
 
     def cleanup_expired(self) -> int:
         """Remove expired cache entries.
 
         Returns:
             Number of expired cache files deleted.
+
         """
         if not self.enabled or not self.cache_dir.exists():
             return 0
 
-        count = 0
         current_time = time.time()
-
-        for cache_file in self.cache_dir.glob("*.json"):
-            try:
-                with cache_file.open("r") as f:
-                    cached_data = json.load(f)
-
-                cached_time = cached_data.get("timestamp", 0)
-                age = current_time - cached_time
-
-                if age > self.ttl_seconds:
-                    cache_file.unlink()
-                    count += 1
-
-            except (json.JSONDecodeError, OSError) as e:
-                logger.warning("Failed to process cache file %s: %s", cache_file, e)
+        count = sum(
+            self._cleanup_file_if_expired(cache_file, current_time)
+            for cache_file in self.cache_dir.glob("*.json")
+        )
 
         if count > 0:
             logger.info("Cleaned up %d expired cache entries", count)

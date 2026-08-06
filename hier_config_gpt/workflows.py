@@ -1,11 +1,15 @@
 import logging
-from typing import Iterable, Iterator, Optional
+from typing import TYPE_CHECKING
 
 from hier_config import HConfig, WorkflowRemediation
 
-from .clients import GPTClient
 from .exceptions import GPTClientInitializationError, RemediationError
 from .models import GPTRemediationContext, GPTRemediationRule
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Iterator
+
+    from .clients import GPTClient
 
 logger = logging.getLogger(__name__)
 
@@ -13,13 +17,18 @@ logger = logging.getLogger(__name__)
 class GPTWorkflowRemediation(WorkflowRemediation):
     """Extends WorkflowRemediation to include GPT-based remediation functionality."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        running_config: HConfig,
+        generated_config: HConfig,
+        plugins: "Iterable[Callable[[HConfig], None]]" = (),
+    ) -> None:
+        super().__init__(running_config, generated_config, plugins)
         self.gpt_rules: list[GPTRemediationRule] = []
-        self._gpt_remediation_config: Optional[HConfig] = None
-        self._gpt_client: Optional[GPTClient] = None
+        self._gpt_remediation_config: HConfig | None = None
+        self._gpt_client: GPTClient | None = None
 
-    def set_gpt_client(self, gpt_client: GPTClient) -> None:
+    def set_gpt_client(self, gpt_client: "GPTClient") -> None:
         """Set GPT client for remediation planning."""
         self._gpt_client = gpt_client
 
@@ -32,6 +41,7 @@ class GPTWorkflowRemediation(WorkflowRemediation):
 
         Args:
             rule: The GPTRemediationRule to add to the workflow.
+
         """
         self.gpt_rules.append(rule)
 
@@ -40,65 +50,70 @@ class GPTWorkflowRemediation(WorkflowRemediation):
 
         Returns:
             HConfig: The configuration created by an GPT to remediate the device.
+
         """
         if not self._gpt_client:
-            raise GPTClientInitializationError("No GPT client is initialized.")
-
-        remediation_plans: list[str] = []
+            msg = "No GPT client is initialized."
+            raise GPTClientInitializationError(msg)
 
         try:
-            for context in self._build_remediation_context():
-                prompt = self._build_gpt_prompt(context)
-                response = self._gpt_client.generate_plan(prompt)
-                remediation_plans.append(self._format_plan(response.plan))
-                logger.debug("GPT remediation metadata: %s", response.metadata)
-
-            combined_plan = "\n".join(remediation_plans)
-            if not combined_plan.strip():
-                raise RemediationError("GPT remediation plan is empty.")
-
-            self._gpt_remediation_config = HConfig.from_lines(
-                self.running_config.driver, combined_plan
-            )
+            remediation_config = self._generate_remediation_config(self._gpt_client)
         except RemediationError:
             raise
-        except Exception as e:
-            raise RemediationError(f"Failed to generate remediation plan: {e}") from e
+        except Exception as exc:
+            msg = f"Failed to generate remediation plan: {exc}"
+            raise RemediationError(msg) from exc
 
-        return self._gpt_remediation_config or HConfig(self.running_config.driver)
+        self._gpt_remediation_config = remediation_config
+        return remediation_config
+
+    def _generate_remediation_config(self, gpt_client: "GPTClient") -> HConfig:
+        """Build the remediation config from GPT-generated plans."""
+        remediation_plans: list[str] = []
+
+        for context in self._build_remediation_context():
+            prompt = self._build_gpt_prompt(context)
+            response = gpt_client.generate_plan(prompt)
+            remediation_plans.append(self._format_plan(response.plan))
+            logger.debug("GPT remediation metadata: %s", response.metadata)
+
+        combined_plan = "\n".join(remediation_plans)
+        if not combined_plan.strip():
+            msg = "GPT remediation plan is empty."
+            raise RemediationError(msg)
+
+        return HConfig.from_lines(self.running_config.driver, combined_plan)
 
     @staticmethod
-    def _format_plan(plan: Iterable[str]) -> str:
+    def _format_plan(plan: "Iterable[str]") -> str:
         """Validate and format plan output from GPT client into text."""
-
-        if not isinstance(plan, Iterable) or isinstance(plan, (str, bytes)):
-            raise RemediationError("GPT remediation plan must be a list of commands.")
-
         commands = [
             str(command).strip("\n") for command in plan if str(command).strip()
         ]
         if not commands:
-            raise RemediationError("GPT remediation plan is empty.")
+            msg = "GPT remediation plan is empty."
+            raise RemediationError(msg)
 
         for command in commands:
             if "\t" in command:
-                raise RemediationError("Commands must not contain tab characters.")
+                msg = "Commands must not contain tab characters."
+                raise RemediationError(msg)
 
         return "\n".join(commands)
 
-    def _build_remediation_context(self) -> Iterator[GPTRemediationContext]:
+    def _build_remediation_context(self) -> "Iterator[GPTRemediationContext]":
         """Generate context for GPT Prompt."""
-
         if not self.gpt_rules:
-            raise RemediationError("No GPT remediation rules loaded.")
+            msg = "No GPT remediation rules loaded."
+            raise RemediationError(msg)
 
         for rule in self.gpt_rules:
             running_config = self.running_config.get_children_deep(rule.lineage)
             generated_config = self.generated_config.get_children_deep(rule.lineage)
 
             yield GPTRemediationContext(
-                running_config="\n".join([str(line) for line in running_config]),
-                generated_config="\n".join([str(line) for line in generated_config]),
+                running_config="\n".join(str(line) for line in running_config),
+                generated_config="\n".join(str(line) for line in generated_config),
                 description=rule.description,
                 example=rule.example,
             )

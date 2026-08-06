@@ -14,11 +14,7 @@ class GPTPlanResponse(BaseModel):
     @classmethod
     def strip_and_filter_plan(cls, plan: list[str]) -> list[str]:
         """Ensure plan commands are clean strings without empty entries."""
-
-        filtered_plan = [
-            str(command).strip("\n") for command in plan if str(command).strip()
-        ]
-        return filtered_plan
+        return [str(command).strip("\n") for command in plan if str(command).strip()]
 
 
 class GPTClient(ABC):

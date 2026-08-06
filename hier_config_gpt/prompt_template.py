@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .models import GPTRemediationContext
+if TYPE_CHECKING:
+    from .models import GPTRemediationContext
+
+_REQUIRED_PLACEHOLDERS = (
+    "{running_config}",
+    "{generated_config}",
+    "{description}",
+    "{example_running_config}",
+    "{example_remediation_config}",
+)
 
 
 class PromptTemplate:
@@ -63,31 +73,25 @@ Use the following example as a guide for the format and structure of the command
 }}
 """
 
-    def __init__(self, template: Optional[str] = None) -> None:
+    def __init__(self, template: str | None = None) -> None:
         """Initialize the prompt template.
 
         Args:
             template: Custom template string (uses DEFAULT_TEMPLATE if None).
                      Must include placeholders: {running_config}, {generated_config},
                      {description}, {example_running_config}, {example_remediation_config}.
+
         """
         self.template = template or self.DEFAULT_TEMPLATE
 
         # Validate template has required placeholders
-        required_placeholders = [
-            "{running_config}",
-            "{generated_config}",
-            "{description}",
-            "{example_running_config}",
-            "{example_remediation_config}",
-        ]
-
-        for placeholder in required_placeholders:
+        for placeholder in _REQUIRED_PLACEHOLDERS:
             if placeholder not in self.template:
-                raise ValueError(
+                msg = (
                     f"Template must include placeholder: {placeholder}. "
-                    f"Missing placeholders prevent proper context injection."
+                    "Missing placeholders prevent proper context injection."
                 )
+                raise ValueError(msg)
 
     def build(self, context: GPTRemediationContext) -> str:
         """Build a prompt from the context using this template.
@@ -97,6 +101,7 @@ Use the following example as a guide for the format and structure of the command
 
         Returns:
             The formatted prompt string.
+
         """
         return self.template.format(
             running_config=context.running_config,
@@ -107,7 +112,7 @@ Use the following example as a guide for the format and structure of the command
         )
 
     @classmethod
-    def from_file(cls, file_path: str) -> PromptTemplate:
+    def from_file(cls, file_path: str | Path) -> PromptTemplate:
         """Load a prompt template from a file.
 
         Args:
@@ -115,7 +120,7 @@ Use the following example as a guide for the format and structure of the command
 
         Returns:
             A PromptTemplate instance with the loaded template.
+
         """
-        with open(file_path, "r") as f:
-            template = f.read()
+        template = Path(file_path).read_text(encoding="utf-8")
         return cls(template=template)

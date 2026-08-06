@@ -6,15 +6,33 @@ import json
 import logging
 import re
 import time
-from collections.abc import Callable, Iterable
-from typing import Any
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, TypeVar, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
+_T = TypeVar("_T")
 
-def coerce_content_to_text(content: Any) -> str:
+
+def _extract_item_text(item: object) -> str | None:
+    """Extract a text fragment from a provider content item."""
+    if isinstance(item, str):
+        return item
+
+    text = (
+        cast("dict[str, object]", item).get("text")
+        if isinstance(item, dict)
+        else getattr(item, "text", None)
+    )
+
+    return None if text is None else str(text)
+
+
+def coerce_content_to_text(content: object) -> str:
     """Flatten provider-specific content payloads into a single string."""
-
     if content is None:
         return ""
 
@@ -22,86 +40,96 @@ def coerce_content_to_text(content: Any) -> str:
         return content
 
     if isinstance(content, Iterable):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-                continue
-
-            text = None
-            if hasattr(item, "text"):
-                text = getattr(item, "text")
-            elif isinstance(item, dict):
-                text = item.get("text")
-
-            if text is not None:
-                parts.append(str(text))
-
-        return "".join(parts)
+        items = cast("Iterable[object]", content)
+        return "".join(
+            text for text in (_extract_item_text(item) for item in items) if text
+        )
 
     return str(content)
 
 
-def parse_plan_payload(raw_payload: Any) -> dict[str, Any]:
-    """Parse a JSON payload expected to contain a remediation plan."""
-
-    text_payload = coerce_content_to_text(raw_payload).strip()
-    if not text_payload:
-        raise ValueError("Empty response payload from provider.")
-
+def _load_json_payload(text_payload: str) -> object:
+    """Load a JSON document from text, falling back to the first embedded list."""
     try:
-        parsed = json.loads(text_payload)
+        return cast("object", json.loads(text_payload))
     except json.JSONDecodeError as exc:
         plan_text = extract_first_list(text_payload)
         try:
-            parsed = json.loads(plan_text)
-        except Exception:
-            raise ValueError("Provider did not return valid JSON.") from exc
+            return cast("object", json.loads(plan_text))
+        except json.JSONDecodeError:
+            msg = "Provider did not return valid JSON."
+            raise ValueError(msg) from exc
+
+
+def parse_plan_payload(raw_payload: object) -> dict[str, object]:
+    """Parse a JSON payload expected to contain a remediation plan."""
+    text_payload = coerce_content_to_text(raw_payload).strip()
+    if not text_payload:
+        msg = "Empty response payload from provider."
+        raise ValueError(msg)
+
+    parsed = _load_json_payload(text_payload)
 
     if isinstance(parsed, list):
-        parsed = {"plan": parsed}
+        parsed = {"plan": cast("list[object]", parsed)}
     elif not isinstance(parsed, dict):
-        raise ValueError("Provider JSON payload must be an object.")
+        msg = "Provider JSON payload must be an object."
+        raise TypeError(msg)
 
-    if "plan" not in parsed:
-        raise ValueError("Provider JSON payload must include a 'plan' field.")
+    payload = cast("dict[str, object]", parsed)
+    if "plan" not in payload:
+        msg = "Provider JSON payload must include a 'plan' field."
+        raise ValueError(msg)
 
-    return parsed
+    return payload
+
+
+def parse_plan_commands(raw_payload: object) -> list[str]:
+    """Parse a provider payload and return the remediation plan commands."""
+    payload = parse_plan_payload(raw_payload)
+    plan = payload["plan"]
+    if not isinstance(plan, list):
+        msg = "Provider 'plan' field must be a list of commands."
+        raise TypeError(msg)
+
+    return [str(command) for command in cast("list[object]", plan)]
 
 
 def extract_first_list(text: str) -> str:
     """Extract the first JSON-like list from text or raise an error."""
-
     match = re.search(r"\[[\s\S]*\]", text)
     if not match:
-        raise ValueError("No JSON list found in payload.")
+        msg = "No JSON list found in payload."
+        raise ValueError(msg)
 
     return match.group(0)
 
 
 def retry_with_backoff(
-    func: Callable[[], Any],
+    func: Callable[[], _T],
     *,
     retries: int = 2,
     backoff_seconds: float = 0.5,
-) -> Any:
+) -> _T:
     """Execute a function with retry and exponential backoff."""
+    try:
+        result = func()
+    # A generic retry helper must catch any provider error.
+    except Exception:  # pylint: disable=broad-exception-caught
+        if retries <= 0:
+            logger.exception("Provider call failed after retries")
+            raise
 
-    attempt = 0
-    while True:
-        try:
-            return func()
-        except Exception as exc:  # pragma: no cover - defensive logging
-            attempt += 1
-            if attempt > retries:
-                logger.exception("Provider call failed after retries: %s", exc)
-                raise
+        logger.warning(
+            "Provider call failed, retrying in %.2fs (%d retries left)",
+            backoff_seconds,
+            retries,
+        )
+        time.sleep(backoff_seconds)
+        return retry_with_backoff(
+            func,
+            retries=retries - 1,
+            backoff_seconds=backoff_seconds * 2,
+        )
 
-            sleep_for = backoff_seconds * (2 ** (attempt - 1))
-            logger.warning(
-                "Provider call failed (attempt %s/%s), retrying in %.2fs",
-                attempt,
-                retries,
-                sleep_for,
-            )
-            time.sleep(sleep_for)
+    return result

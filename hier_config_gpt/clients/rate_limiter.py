@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +26,7 @@ class RateLimiter:
         Args:
             max_requests: Maximum number of requests allowed in the time window.
             time_window_seconds: Time window in seconds for rate limiting.
+
         """
         self.max_requests = max_requests
         self.time_window = time_window_seconds
@@ -50,7 +50,7 @@ class RateLimiter:
         self.tokens = min(self.max_requests, self.tokens + tokens_to_add)
         self.last_update = now
 
-    def acquire(self, tokens: int = 1, timeout: Optional[float] = None) -> bool:
+    def acquire(self, tokens: int = 1, timeout: float | None = None) -> bool:
         """Acquire tokens from the bucket, blocking if necessary.
 
         Args:
@@ -59,6 +59,7 @@ class RateLimiter:
 
         Returns:
             True if tokens were acquired, False if timeout occurred.
+
         """
         deadline = None if timeout is None else time.time() + timeout
 
@@ -98,12 +99,13 @@ class RateLimiter:
 
         Returns:
             True if tokens were acquired, False otherwise.
+
         """
         return self.acquire(tokens, timeout=0)
 
     @property
     def available_tokens(self) -> float:
-        """Get the current number of available tokens."""
+        """The current number of available tokens."""
         with self.lock:
             self._refill_tokens()
             return self.tokens

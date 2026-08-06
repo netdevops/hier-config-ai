@@ -29,38 +29,41 @@ Thank you for your interest in contributing to hier-config-gpt! We welcome contr
 
 ### Code Style
 
-We use several tools to maintain code quality:
+We use several tools to maintain code quality, all run through the
+`scripts/build.py` runner (they execute in parallel):
 
-- **Ruff**: For linting and formatting
-- **mypy**: For type checking
-- **pylint**: For additional linting
+- **Ruff**: linting (`select = ["ALL"]` with preview) and formatting
+- **mypy** (strict) and **pyright** (strict): type checking
+- **pylint**: additional linting
+- **yamllint**: YAML syntax
+- **flynt**: f-string enforcement
 
 Run checks before committing:
 
 ```bash
-# Format code
-poetry run ruff format .
+# Full lint + test suite (what CI runs)
+poetry run python scripts/build.py lint-and-test
 
-# Run linter
-poetry run ruff check .
+# Lint only
+poetry run python scripts/build.py lint
 
-# Type checking
-poetry run mypy hier_config_gpt
-
-# Pylint
-poetry run pylint hier_config_gpt
+# Auto-fix formatting and safe lint violations
+poetry run python scripts/build.py lint --fix
 ```
+
+All code (including tests) must carry full type annotations. Do not loosen the
+lint or coverage configuration to make a change pass.
 
 ### Testing
 
 We use pytest for testing. Please ensure all tests pass before submitting a PR:
 
 ```bash
-# Run all tests
-poetry run pytest
+# Run all tests with the enforced coverage gate (95%)
+poetry run python scripts/build.py pytest --coverage
 
-# Run with coverage
-poetry run pytest --cov=hier_config_gpt --cov-report=html
+# Run all tests directly
+poetry run pytest
 
 # Run specific test file
 poetry run pytest tests/test_workflows.py
@@ -68,10 +71,13 @@ poetry run pytest tests/test_workflows.py
 
 ### Writing Tests
 
-- Write tests for all new features and bug fixes
-- Aim for high test coverage (>80%)
+- Write a failing test first (TDD), confirm it fails for the right reason,
+  then implement minimally
+- Tests are flat function-based (no test classes) with full type annotations
+- Test coverage must stay at or above 95% (enforced in CI)
 - Use descriptive test names that explain what is being tested
-- Mock external dependencies (API calls, file system, etc.)
+- Mock external dependencies (API calls, file system, etc.); no API keys are
+  needed to run the suite
 
 Example test structure:
 

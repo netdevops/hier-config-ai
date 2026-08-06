@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from .cache import ResponseCache
 from .models import GPTClient, GPTPlanResponse
@@ -21,18 +20,19 @@ class CachedGPTClient(GPTClient):
     def __init__(
         self,
         client: GPTClient,
-        cache: Optional[ResponseCache] = None,
+        cache: ResponseCache | None = None,
     ) -> None:
         """Initialize the cached client wrapper.
 
         Args:
             client: The underlying GPT client to wrap.
             cache: The response cache instance (creates default if None).
+
         """
         super().__init__()
         self.client = client
         self.cache = cache or ResponseCache()
-        self._model_id = getattr(client, "model", "unknown")
+        self._model_id = str(getattr(client, "model", "unknown"))
 
     def chat(self, prompt: str) -> str:
         """Send a chat prompt, using cache if available.
@@ -42,17 +42,14 @@ class CachedGPTClient(GPTClient):
 
         Returns:
             The response text.
+
         """
-        # Check cache
         cached = self.cache.get(prompt, self._model_id)
         if cached is not None:
             logger.debug("Using cached chat response")
-            return cached.get("text", "")
+            return str(cached.get("text", ""))
 
-        # Call underlying client
         response = self.client.chat(prompt)
-
-        # Cache response
         self.cache.set(prompt, self._model_id, {"text": response})
 
         return response
@@ -65,8 +62,8 @@ class CachedGPTClient(GPTClient):
 
         Returns:
             The generated plan response.
+
         """
-        # Check cache
         cached = self.cache.get(prompt, self._model_id)
         if cached is not None:
             logger.info("Using cached plan response")
@@ -78,7 +75,6 @@ class CachedGPTClient(GPTClient):
                 metadata=metadata,
             )
 
-        # Call underlying client
         response = self.client.generate_plan(prompt)
 
         # Cache response (convert to dict for JSON serialization)

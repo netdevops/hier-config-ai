@@ -12,22 +12,21 @@ hier-config-gpt extends the [hier-config](https://github.com/netdevops/hier-conf
 # Install all dependencies (dev + all LLM providers)
 poetry install --with dev,chatgpt,anthropic,ollama
 
-# Run all tests with coverage
-poetry run pytest --cov=hier_config_gpt --cov-report=term
+# Full lint + test suite (equivalent to CI)
+poetry run python scripts/build.py lint-and-test
+
+# Lint only (ruff, mypy, pyright, pylint, yamllint, flynt - run in parallel)
+poetry run python scripts/build.py lint
+
+# Auto-fix formatting and safe lint violations
+poetry run python scripts/build.py lint --fix
+
+# Tests only (95% coverage required)
+poetry run python scripts/build.py pytest --coverage
 
 # Run a single test file or test
 poetry run pytest tests/test_workflows.py
-poetry run pytest tests/test_clients.py -k "test_chat_gpt_client_generate_plan"
-
-# Linting & formatting (these are enforced in CI)
-poetry run ruff check .
-poetry run ruff format --check .
-
-# Type checking (non-blocking in CI)
-poetry run mypy hier_config_gpt
-
-# Pylint (non-blocking in CI)
-poetry run pylint hier_config_gpt
+poetry run pytest tests/test_clients.py -k "test_chatgpt_client_generate_plan"
 
 # Docs
 poetry run mkdocs serve    # local preview
@@ -76,11 +75,18 @@ GPTRemediationRule (lineage + description + example)
 
 ## Testing
 
-Tests use `unittest.mock.patch` to mock all external LLM API calls. Fixtures in `tests/conftest.py` provide mock responses, sample rules, and real `HConfig` objects with a mock driver. No API keys needed to run tests.
+Tests are flat function-based (no test classes) with full type annotations. External LLM API calls are mocked (`unittest.mock.patch` for provider SDKs, plus a typed `StubGPTClient` in `tests/conftest.py`); real `HConfig` objects use the GENERIC platform driver. No API keys needed to run tests. TDD is expected: write a failing test first, then implement. Coverage must stay at or above 95% (enforced by `scripts/build.py pytest --coverage`).
+
+## Code Standards
+
+- Ruff with `select = ["ALL"]` and preview mode, line length 88; the ignore list in `pyproject.toml` mirrors hier-config's and must not be loosened to make a change pass.
+- mypy strict (with the pydantic plugin) and pyright strict; full annotations everywhere, including tests.
+- pylint with the same extension plugins as hier-config (including `pylint_pydantic`).
+- Every PR adds a `CHANGELOG.md` entry under `## [Unreleased]`.
 
 ## CI
 
-GitHub Actions runs on Ubuntu + macOS across Python 3.10/3.11/3.12. Ruff lint/format and pytest are blocking; mypy and pylint are non-blocking (`continue-on-error: true`).
+GitHub Actions runs on Ubuntu across Python 3.10-3.14. Each job runs `poetry run python scripts/build.py lint` and `poetry run python scripts/build.py pytest --coverage`; all checks are blocking. A separate docs job builds with `mkdocs build --strict`.
 
 ## Dependencies
 

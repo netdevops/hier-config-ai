@@ -21,15 +21,19 @@ cd hier-config-gpt
 poetry install --with dev,chatgpt,anthropic,ollama
 ```
 
-3. Run tests:
+3. Run tests (95% coverage enforced):
 ```bash
-poetry run pytest
+poetry run python scripts/build.py pytest --coverage
 ```
 
-4. Run linters:
+4. Run linters (ruff, mypy, pyright, pylint, yamllint, flynt in parallel):
 ```bash
-poetry run ruff check .
-poetry run mypy .
+poetry run python scripts/build.py lint
+```
+
+Or run everything at once, exactly like CI:
+```bash
+poetry run python scripts/build.py lint-and-test
 ```
 
 ## Submitting Changes

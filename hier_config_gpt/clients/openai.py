@@ -1,11 +1,17 @@
+from typing import TYPE_CHECKING
+
 from openai import OpenAI
-from openai.types.chat import ChatCompletion
 
 from .models import GPTClient, GPTPlanResponse
-from .utils import parse_plan_payload, retry_with_backoff
+from .utils import parse_plan_commands, retry_with_backoff
+
+if TYPE_CHECKING:
+    from openai.types.chat import ChatCompletion
 
 
 class ChatGPTClient(GPTClient):
+    """OpenAI-backed GPT client for generating remediation plans."""
+
     def __init__(
         self,
         api_key: str,
@@ -22,6 +28,7 @@ class ChatGPTClient(GPTClient):
             temp: Temperature for response randomness (0.0-2.0, default: 0.0).
             max_tokens: Maximum tokens in the response (default: 1000).
             timeout: Request timeout in seconds (default: 60.0).
+
         """
         super().__init__()
         self.client = OpenAI(api_key=api_key, timeout=timeout)
@@ -31,11 +38,10 @@ class ChatGPTClient(GPTClient):
         self.timeout = timeout
 
     @staticmethod
-    def process_response(response: ChatCompletion) -> list[str]:
+    def process_response(response: "ChatCompletion") -> list[str]:
         """Extract and clean the response content, returning just the plan."""
         message = response.choices[0].message
-        payload = parse_plan_payload(message.content)
-        return payload.get("plan", [])
+        return parse_plan_commands(message.content)
 
     def chat(self, prompt: str) -> str:
         """Interact with ChatGPT textually."""

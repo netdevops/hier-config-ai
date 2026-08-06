@@ -1,11 +1,17 @@
+from typing import TYPE_CHECKING
+
 from anthropic import Anthropic
-from anthropic.types import Message
 
 from .models import GPTClient, GPTPlanResponse
-from .utils import parse_plan_payload, retry_with_backoff
+from .utils import parse_plan_commands, retry_with_backoff
+
+if TYPE_CHECKING:
+    from anthropic.types import Message
 
 
 class ClaudeGPTClient(GPTClient):
+    """Anthropic-backed GPT client for generating remediation plans."""
+
     def __init__(
         self,
         api_key: str,
@@ -23,6 +29,7 @@ class ClaudeGPTClient(GPTClient):
             temp: Temperature for response randomness (0.0-1.0, default: 0.0).
             max_tokens: Maximum tokens in the response (default: 1024).
             timeout: Request timeout in seconds (default: 60.0).
+
         """
         super().__init__()
         self.client = Anthropic(api_key=api_key, timeout=timeout)
@@ -32,10 +39,9 @@ class ClaudeGPTClient(GPTClient):
         self.timeout = timeout
 
     @staticmethod
-    def process_response(response: Message) -> list[str]:
+    def process_response(response: "Message") -> list[str]:
         """Extract and clean the response content, returning just the plan."""
-        payload = parse_plan_payload(response.content)
-        return payload.get("plan", [])
+        return parse_plan_commands(response.content)
 
     def chat(self, prompt: str) -> str:
         """Interact with Claude textually."""
@@ -46,7 +52,12 @@ class ClaudeGPTClient(GPTClient):
             temperature=self.temp,
         )
 
-        return response.content[0].text if response.content else "No content available."
+        if not response.content:
+            return "No content available."
+
+        content_block = response.content[0]
+        text: object = getattr(content_block, "text", None)
+        return str(text) if text is not None else "No content available."
 
     def generate_plan(self, prompt: str) -> GPTPlanResponse:
         """Generate remediation plan from prompt using Anthropic's Claude model."""

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING
 
-from .models import GPTClient, GPTPlanResponse
+from .models import GPTClient
 from .rate_limiter import RateLimiter
+
+if TYPE_CHECKING:
+    from .models import GPTPlanResponse
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +24,7 @@ class RateLimitedGPTClient(GPTClient):
     def __init__(
         self,
         client: GPTClient,
-        rate_limiter: Optional[RateLimiter] = None,
+        rate_limiter: RateLimiter | None = None,
         max_requests: int = 60,
         time_window_seconds: float = 60.0,
     ) -> None:
@@ -32,6 +35,7 @@ class RateLimitedGPTClient(GPTClient):
             rate_limiter: Custom rate limiter instance (creates default if None).
             max_requests: Maximum requests per time window (default: 60).
             time_window_seconds: Time window in seconds (default: 60.0).
+
         """
         super().__init__()
         self.client = client
@@ -52,6 +56,7 @@ class RateLimitedGPTClient(GPTClient):
 
         Returns:
             The response text.
+
         """
         logger.debug("Acquiring rate limit token for chat request")
         self.rate_limiter.acquire(tokens=1)
@@ -65,6 +70,7 @@ class RateLimitedGPTClient(GPTClient):
 
         Returns:
             The generated plan response.
+
         """
         logger.debug("Acquiring rate limit token for generate_plan request")
         self.rate_limiter.acquire(tokens=1)
