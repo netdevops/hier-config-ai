@@ -57,12 +57,12 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started:
-    - Installation: installation.md
-    - Quick Start: quickstart.md
+      - Installation: installation.md
+      - Quick Start: quickstart.md
   - User Guide:
-    - LLM Clients: user-guide/clients.md
-    - Advanced Features: user-guide/advanced-features.md
-    - Prompt Templates: user-guide/prompt-templates.md
+      - LLM Clients: user-guide/clients.md
+      - Advanced Features: user-guide/advanced-features.md
+      - Prompt Templates: user-guide/prompt-templates.md
   - Examples: examples.md
   - API Reference: api-reference.md
   - Contributing: contributing.md
