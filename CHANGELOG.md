@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Release automation workflows: `prepare-release.yml`
+  (admin-gated `workflow_dispatch`) bumps the version with `poetry version`,
+  rotates the changelog, opens a release PR, and creates a draft GitHub
+  release; `release.yml` builds and publishes to PyPI when a release is
+  published
 - Ported hier-config's development, testing, and linting standards: strict
   ruff (`select = ["ALL"]` with preview), mypy strict (pydantic plugin),
   pyright strict, pylint (with `pylint_pydantic`), yamllint, and flynt,

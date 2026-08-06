@@ -88,6 +88,8 @@ Tests are flat function-based (no test classes) with full type annotations. Exte
 
 GitHub Actions runs on Ubuntu across Python 3.10-3.14. Each job runs `poetry run python scripts/build.py lint` and `poetry run python scripts/build.py pytest --coverage`; all checks are blocking. A separate docs job builds with `mkdocs build --strict`.
 
+Two release workflows exist: `prepare-release.yml` (`workflow_dispatch`, admin-only) bumps the version with `poetry version`, rotates the changelog, opens a release PR, and creates a draft `vX.Y.Z` release; `release.yml` publishes to PyPI (`poetry publish --build`) when a GitHub release is published. Process: run Prepare Release (pick branch + bump) → merge the release PR → publish the draft release. See "Releasing" in CONTRIBUTING.md.
+
 ## Dependencies
 
 LLM provider packages (`openai`, `anthropic`, `ollama`) are optional extras. Core dependencies are only `pydantic` and `hier-config`. Install specific providers with `poetry install --with chatgpt` or all with `--with chatgpt,anthropic,ollama`.

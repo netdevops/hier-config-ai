@@ -152,6 +152,23 @@ Use conventional commit format for PR titles:
 - Address all review comments
 - Request re-review after making changes
 
+## Releasing
+
+Releases are automated by two GitHub Actions workflows (maintainers with
+admin permission only):
+
+1. Run the **Prepare Release** workflow (`Actions` → `Prepare Release` →
+   `Run workflow`), picking the branch to release from in the branch
+   dropdown and a bump type (`major`, `minor`, `patch`, or `prerelease`).
+   It bumps the version with `poetry version`, rotates
+   `## [Unreleased]` in `CHANGELOG.md` into a dated release section (skipped
+   for prereleases), opens a `chore(release): prepare X.Y.Z` PR against the
+   chosen branch, and creates a draft `vX.Y.Z` GitHub release.
+2. Merge the release PR.
+3. Publish the draft release.
+4. The **Release** workflow fires on publish and pushes the package to PyPI
+   with `poetry publish --build`.
+
 ## Reporting Issues
 
 When reporting issues, please include:

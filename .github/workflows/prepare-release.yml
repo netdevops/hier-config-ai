@@ -1,0 +1,146 @@
+name: Prepare Release
+
+# The branch to release from is chosen via the standard "Run workflow"
+# branch dropdown in the GitHub UI (the dispatched ref); this workflow
+# bumps the version on that branch and targets it with the release PR
+# and draft release.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump type
+        required: true
+        type: choice
+        options:
+        - major
+        - minor
+        - patch
+        - prerelease
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Require repository admin
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            username: context.actor,
+          });
+          if (data.permission !== 'admin') {
+            core.setFailed(
+              `User ${context.actor} has '${data.permission}' permission; ` +
+              "'admin' is required to prepare a release.",
+            );
+          }
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref_name }}
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+    - name: Bump version
+      id: bump
+      run: |
+        poetry version "${{ inputs.bump }}"
+        echo "version=$(poetry version -s)" >> "$GITHUB_OUTPUT"
+    - name: Rotate changelog
+      if: inputs.bump != 'prerelease'
+      env:
+        NEW_VERSION: ${{ steps.bump.outputs.version }}
+      run: |
+        python - <<'EOF'
+        import datetime
+        import os
+        from pathlib import Path
+
+        version = os.environ["NEW_VERSION"]
+        path = Path("CHANGELOG.md")
+        text = path.read_text(encoding="utf-8")
+        heading = f"## [{version}]"
+        if heading in text:
+            print(f"CHANGELOG.md already has a {heading} section; nothing to do.")
+            raise SystemExit(0)
+        marker = "## [Unreleased]"
+        if marker not in text:
+            raise SystemExit("CHANGELOG.md has no '## [Unreleased]' section.")
+        today = datetime.datetime.now(tz=datetime.timezone.utc).date()
+        text = text.replace(marker, f"{marker}\n\n{heading} - {today}", 1)
+        path.write_text(text, encoding="utf-8")
+        EOF
+    - name: Extract release notes
+      if: inputs.bump != 'prerelease'
+      env:
+        NEW_VERSION: ${{ steps.bump.outputs.version }}
+        NOTES_PATH: ${{ runner.temp }}/release_notes.md
+      run: |
+        python - <<'EOF'
+        import os
+        import re
+        from pathlib import Path
+
+        version = os.environ["NEW_VERSION"]
+        text = Path("CHANGELOG.md").read_text(encoding="utf-8")
+        pattern = (
+            rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)"
+        )
+        match = re.search(pattern, text, flags=re.MULTILINE | re.DOTALL)
+        if match is None:
+            raise SystemExit(f"CHANGELOG.md has no '## [{version}]' section.")
+        notes = match.group(1).strip() + "\n"
+        Path(os.environ["NOTES_PATH"]).write_text(notes, encoding="utf-8")
+        EOF
+    - name: Commit and push release branch
+      env:
+        VERSION: ${{ steps.bump.outputs.version }}
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email \
+          "41898282+github-actions[bot]@users.noreply.github.com"
+        git checkout -b "release/v${VERSION}"
+        git add pyproject.toml CHANGELOG.md
+        git commit -m "chore(release): prepare ${VERSION}"
+        git push origin "release/v${VERSION}"
+    - name: Open release pull request
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VERSION: ${{ steps.bump.outputs.version }}
+        BUMP: ${{ inputs.bump }}
+        BASE: ${{ github.ref_name }}
+      run: |
+        gh pr create \
+          --base "${BASE}" \
+          --head "release/v${VERSION}" \
+          --title "chore(release): prepare ${VERSION}" \
+          --body "Automated \`${BUMP}\` version bump to \`${VERSION}\`.
+
+        Merge this PR first, then publish the draft \`v${VERSION}\` release;
+        publishing triggers the PyPI publish workflow."
+    - name: Create draft GitHub release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VERSION: ${{ steps.bump.outputs.version }}
+        TARGET: ${{ github.ref_name }}
+      run: |
+        args=(--target "${TARGET}" --draft --title "v${VERSION}")
+        if [[ "${VERSION}" =~ (a|b|rc|dev) ]]; then
+          args+=(--prerelease)
+        fi
+        if [[ -s "${RUNNER_TEMP}/release_notes.md" ]]; then
+          args+=(--notes-file "${RUNNER_TEMP}/release_notes.md")
+        else
+          args+=(--generate-notes)
+        fi
+        gh release create "v${VERSION}" "${args[@]}"
