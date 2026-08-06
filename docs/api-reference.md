@@ -31,11 +31,11 @@ GPTWorkflowRemediation(
 **Example:**
 
 ```python
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 
 wfr = GPTWorkflowRemediation(
-    running_config=get_hconfig(Platform.CISCO_IOS, running_text),
-    generated_config=get_hconfig(Platform.CISCO_IOS, generated_text)
+    running_config=HConfig.from_text(Platform.CISCO_IOS, running_text),
+    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_text)
 )
 ```
 
@@ -600,15 +600,15 @@ Complete example showing typical API usage:
 
 ```python
 import os
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
 from hier_config_gpt import GPTWorkflowRemediation
 from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
 from hier_config_gpt.clients import ChatGPTClient
 
 # Load configurations
-running = get_hconfig(Platform.CISCO_IOS, running_text)
-generated = get_hconfig(Platform.CISCO_IOS, generated_text)
+running = HConfig.from_text(Platform.CISCO_IOS, running_text)
+generated = HConfig.from_text(Platform.CISCO_IOS, generated_text)
 
 # Create workflow
 wfr = GPTWorkflowRemediation(

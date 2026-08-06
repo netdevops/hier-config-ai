@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHANGELOG.md for tracking project changes
 
 ### Changed
+- Migrated to hier_config v4 (`hier-config >=4.0.0b1`): replaced
+  `get_hconfig_fast_load()` with `HConfig.from_lines()` in
+  `GPTWorkflowRemediation`, and updated all documentation examples from
+  `get_hconfig()` to `HConfig.from_text()`
 - Updated default OpenAI model from `gpt-4` to `gpt-4o`
 - Updated default Anthropic model to `claude-3-5-sonnet-20241022`
 - Updated default Ollama model to `llama3.2`

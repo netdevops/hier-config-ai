@@ -322,7 +322,7 @@ wfr = GPTWorkflowRemediation(
 Test your templates with known scenarios:
 
 ```python
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 from hier_config_gpt import GPTWorkflowRemediation, PromptTemplate
 
 # Test configuration
@@ -332,8 +332,8 @@ generated = "ip access-list extended TEST\n  10 deny ip any any\n  20 permit ip 
 # Test your template
 template = PromptTemplate(template=your_custom_template)
 wfr = GPTWorkflowRemediation(
-    running_config=get_hconfig(Platform.CISCO_IOS, running),
-    generated_config=get_hconfig(Platform.CISCO_IOS, generated),
+    running_config=HConfig.from_text(Platform.CISCO_IOS, running),
+    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated),
     prompt_template=template
 )
 

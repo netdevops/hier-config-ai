@@ -1,8 +1,7 @@
 import logging
 from typing import Iterable, Iterator, Optional
 
-from hier_config import WorkflowRemediation, get_hconfig_fast_load
-from hier_config.root import HConfig
+from hier_config import HConfig, WorkflowRemediation
 
 from .clients import GPTClient
 from .exceptions import GPTClientInitializationError, RemediationError
@@ -58,7 +57,7 @@ class GPTWorkflowRemediation(WorkflowRemediation):
             if not combined_plan.strip():
                 raise RemediationError("GPT remediation plan is empty.")
 
-            self._gpt_remediation_config = get_hconfig_fast_load(
+            self._gpt_remediation_config = HConfig.from_lines(
                 self.running_config.driver, combined_plan
             )
         except RemediationError:

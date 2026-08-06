@@ -24,15 +24,15 @@
 
 ```python
 import os
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
 from hier_config_gpt import GPTWorkflowRemediation
 from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
 from hier_config_gpt.clients import ChatGPTClient
 
 # Load configurations
-running_config = get_hconfig(Platform.CISCO_IOS, open("running.conf").read())
-generated_config = get_hconfig(Platform.CISCO_IOS, open("desired.conf").read())
+running_config = HConfig.from_text(Platform.CISCO_IOS, open("running.conf").read())
+generated_config = HConfig.from_text(Platform.CISCO_IOS, open("desired.conf").read())
 
 # Initialize workflow
 wfr = GPTWorkflowRemediation(

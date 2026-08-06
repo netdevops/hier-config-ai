@@ -72,9 +72,9 @@ class TestGPTWorkflowRemediation:
         with pytest.raises(RemediationError, match="No GPT remediation rules loaded"):
             remediation_workflow.gpt_remediation_config()
 
-    @patch("hier_config_gpt.workflows.get_hconfig_fast_load")
+    @patch("hier_config_gpt.workflows.HConfig.from_lines")
     def test_gpt_remediation_config_success(
-        self, mock_get_hconfig, remediation_workflow, gpt_rule, mock_driver
+        self, mock_from_lines, remediation_workflow, gpt_rule, mock_driver
     ):
         """Test successful GPT remediation plan generation."""
         # Set up mocks
@@ -89,7 +89,7 @@ class TestGPTWorkflowRemediation:
 
         # Create a real HConfig instance for the result
         result_config = HConfig(mock_driver)
-        mock_get_hconfig.return_value = result_config
+        mock_from_lines.return_value = result_config
 
         # Prepare mocks for _build_remediation_context
         example = GPTRemediationExample(
@@ -122,14 +122,14 @@ class TestGPTWorkflowRemediation:
             mock_client.generate_plan.assert_called_once()
             prompt = GPTWorkflowRemediation._build_gpt_prompt(context)
             mock_client.generate_plan.assert_called_once_with(prompt)
-            mock_get_hconfig.assert_called_once_with(
+            mock_from_lines.assert_called_once_with(
                 remediation_workflow.running_config.driver,
                 "\n".join(mock_client.generate_plan.return_value.plan),
             )
 
-    @patch("hier_config_gpt.workflows.get_hconfig_fast_load")
+    @patch("hier_config_gpt.workflows.HConfig.from_lines")
     def test_gpt_remediation_config_multiple_contexts(
-        self, mock_get_hconfig, remediation_workflow, gpt_rule, mock_driver
+        self, mock_from_lines, remediation_workflow, gpt_rule, mock_driver
     ):
         """Test aggregation of multiple GPT remediation contexts."""
 
@@ -149,7 +149,7 @@ class TestGPTWorkflowRemediation:
         mock_client.generate_plan.side_effect = [first_plan, second_plan]
 
         result_config = HConfig(mock_driver)
-        mock_get_hconfig.return_value = result_config
+        mock_from_lines.return_value = result_config
 
         example = GPTRemediationExample(
             running_config="interface Eth0\n shutdown",
@@ -185,13 +185,13 @@ class TestGPTWorkflowRemediation:
             combined_plan = "\n".join(
                 ["\n".join(first_plan.plan), "\n".join(second_plan.plan)]
             )
-            mock_get_hconfig.assert_called_once_with(
+            mock_from_lines.assert_called_once_with(
                 remediation_workflow.running_config.driver, combined_plan
             )
 
-    @patch("hier_config_gpt.workflows.get_hconfig_fast_load")
+    @patch("hier_config_gpt.workflows.HConfig.from_lines")
     def test_gpt_remediation_config_error(
-        self, mock_get_hconfig, remediation_workflow, gpt_rule
+        self, mock_from_lines, remediation_workflow, gpt_rule
     ):
         """Test error handling during GPT remediation plan generation."""
         # Set up mocks

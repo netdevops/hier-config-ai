@@ -51,7 +51,7 @@ pip install hier-config-gpt[all]
 
 ```python
 import os
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
 from hier_config_gpt import GPTWorkflowRemediation
 from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
@@ -63,8 +63,8 @@ generated_config = open("desired_config.conf").read()
 
 # Initialize workflow
 wfr = GPTWorkflowRemediation(
-    running_config=get_hconfig(Platform.CISCO_IOS, running_config),
-    generated_config=get_hconfig(Platform.CISCO_IOS, generated_config)
+    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
+    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
 )
 
 # Define remediation rule

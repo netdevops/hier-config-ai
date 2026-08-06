@@ -18,7 +18,7 @@ When modifying ACLs, you need to:
 
 ```python
 import os
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
 from hier_config_gpt import GPTWorkflowRemediation
 from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
@@ -41,8 +41,8 @@ ip access-list extended PRODUCTION-ACL
 
 # Initialize workflow
 wfr = GPTWorkflowRemediation(
-    running_config=get_hconfig(Platform.CISCO_IOS, running_config),
-    generated_config=get_hconfig(Platform.CISCO_IOS, generated_config)
+    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
+    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
 )
 
 # Define remediation rule
@@ -114,7 +114,7 @@ When making significant interface changes, you need to:
 ### Solution
 
 ```python
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
 from hier_config_gpt import GPTWorkflowRemediation
 from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
@@ -137,8 +137,8 @@ interface GigabitEthernet0/1
 """
 
 wfr = GPTWorkflowRemediation(
-    running_config=get_hconfig(Platform.CISCO_IOS, running_config),
-    generated_config=get_hconfig(Platform.CISCO_IOS, generated_config)
+    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
+    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
 )
 
 description = """
@@ -177,7 +177,7 @@ For critical infrastructure, you want multiple AI models to agree on the remedia
 ### Solution
 
 ```python
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
 from hier_config_gpt import GPTWorkflowRemediation
 from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
@@ -202,8 +202,8 @@ router bgp 65001
 """
 
 wfr = GPTWorkflowRemediation(
-    running_config=get_hconfig(Platform.CISCO_IOS, running_config),
-    generated_config=get_hconfig(Platform.CISCO_IOS, generated_config)
+    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
+    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
 )
 
 description = """
@@ -253,7 +253,7 @@ You're processing hundreds of device configurations and want to:
 ### Solution
 
 ```python
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
 from hier_config_gpt import GPTWorkflowRemediation
 from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
@@ -277,8 +277,8 @@ for device_file in devices:
     generated = open(f"generated/{device_file}").read()
 
     wfr = GPTWorkflowRemediation(
-        running_config=get_hconfig(Platform.CISCO_IOS, running),
-        generated_config=get_hconfig(Platform.CISCO_IOS, generated)
+        running_config=HConfig.from_text(Platform.CISCO_IOS, running),
+        generated_config=HConfig.from_text(Platform.CISCO_IOS, generated)
     )
 
     # Add your rules...
@@ -301,7 +301,7 @@ You need the AI to understand your specific environment, naming conventions, and
 ### Solution
 
 ```python
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 from hier_config_gpt import GPTWorkflowRemediation, PromptTemplate
 from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
 from hier_config_gpt.clients import ChatGPTClient
@@ -340,8 +340,8 @@ running = open("router.conf").read()
 generated = open("desired.conf").read()
 
 wfr = GPTWorkflowRemediation(
-    running_config=get_hconfig(Platform.CISCO_IOS, running),
-    generated_config=get_hconfig(Platform.CISCO_IOS, generated),
+    running_config=HConfig.from_text(Platform.CISCO_IOS, running),
+    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated),
     prompt_template=template
 )
 
@@ -363,7 +363,7 @@ VLAN changes require careful ordering to avoid disrupting trunk ports and access
 ### Solution
 
 ```python
-from hier_config import get_hconfig, Platform
+from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
 from hier_config_gpt import GPTWorkflowRemediation
 from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
@@ -384,8 +384,8 @@ interface GigabitEthernet0/1
 """
 
 wfr = GPTWorkflowRemediation(
-    running_config=get_hconfig(Platform.CISCO_IOS, running_config),
-    generated_config=get_hconfig(Platform.CISCO_IOS, generated_config)
+    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
+    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
 )
 
 description = """
