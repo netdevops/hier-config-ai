@@ -1,131 +1,120 @@
-"""Tests for the file-based response cache."""
+"""Tests for the on-disk response cache."""
 
 from __future__ import annotations
 
 import json
+import stat
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from hier_config_gpt.clients.cache import ResponseCache
+from hier_config_ai.cache import ResponseCache
 
 if TYPE_CHECKING:
-    import pytest
+    from pathlib import Path
+
+PAYLOAD = b'{"plan": ["interface GigabitEthernet0/1"]}'
 
 
-def test_cache_set_and_get(tmp_path: Path) -> None:
-    cache = ResponseCache(cache_dir=tmp_path)
-    cache.set("prompt", "model", {"text": "response"})
-
-    assert cache.get("prompt", "model") == {"text": "response"}
+def build(tmp_path: Path, **kwargs: object) -> ResponseCache:
+    """Build a cache rooted in a temporary directory."""
+    return ResponseCache(cache_dir=tmp_path / "cache", **kwargs)  # type: ignore[arg-type]
 
 
-def test_cache_get_miss(tmp_path: Path) -> None:
-    cache = ResponseCache(cache_dir=tmp_path)
-
-    assert cache.get("unknown prompt", "model") is None
-
-
-def test_cache_get_expired_deletes_file(tmp_path: Path) -> None:
-    cache = ResponseCache(cache_dir=tmp_path, ttl_seconds=0.0)
-    cache.set("prompt", "model", {"text": "response"})
-    assert len(list(tmp_path.glob("*.json"))) == 1
-
-    time.sleep(0.01)
-    assert cache.get("prompt", "model") is None
-    assert len(list(tmp_path.glob("*.json"))) == 0
+def test_stored_payload_is_returned(tmp_path: Path) -> None:
+    """A stored entry comes back unchanged."""
+    cache = build(tmp_path)
+    cache.set("key", PAYLOAD)
+    assert cache.get("key") == PAYLOAD
 
 
-def test_cache_disabled(tmp_path: Path) -> None:
-    cache_dir = tmp_path / "cache"
-    cache = ResponseCache(cache_dir=cache_dir, enabled=False)
-
-    cache.set("prompt", "model", {"text": "response"})
-    assert not cache_dir.exists()
-    assert cache.get("prompt", "model") is None
-    assert cache.clear() == 0
-    assert cache.cleanup_expired() == 0
+def test_missing_key_returns_none(tmp_path: Path) -> None:
+    """An absent entry is a miss, not an error."""
+    assert build(tmp_path).get("absent") is None
 
 
-def test_cache_default_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    cache = ResponseCache()
-
-    assert cache.cache_dir == tmp_path / ".hier_config_gpt" / "cache"
-    assert cache.cache_dir.is_dir()
-
-
-def test_cache_corrupt_file_returns_none(tmp_path: Path) -> None:
-    cache = ResponseCache(cache_dir=tmp_path)
-    cache.set("prompt", "model", {"text": "response"})
-    cache_file = next(tmp_path.glob("*.json"))
-    cache_file.write_text("not json", encoding="utf-8")
-
-    assert cache.get("prompt", "model") is None
+def test_expired_entry_is_discarded(tmp_path: Path) -> None:
+    """An entry past its TTL is treated as a miss and removed."""
+    cache = build(tmp_path, ttl_seconds=0.01)
+    cache.set("key", PAYLOAD)
+    time.sleep(0.02)
+    assert cache.get("key") is None
+    assert not list((tmp_path / "cache").glob("*.json"))
 
 
-def test_cache_non_dict_payload_returns_none(tmp_path: Path) -> None:
-    cache = ResponseCache(cache_dir=tmp_path)
-    cache.set("prompt", "model", {"text": "response"})
-    cache_file = next(tmp_path.glob("*.json"))
-    cache_file.write_text("[1, 2, 3]", encoding="utf-8")
-
-    assert cache.get("prompt", "model") is None
+def test_disabled_cache_stores_nothing(tmp_path: Path) -> None:
+    """A disabled cache neither writes nor reads."""
+    cache = build(tmp_path, enabled=False)
+    cache.set("key", PAYLOAD)
+    assert cache.get("key") is None
 
 
-def test_cache_non_dict_response_returns_none(tmp_path: Path) -> None:
-    cache = ResponseCache(cache_dir=tmp_path)
-    cache.set("prompt", "model", {"text": "response"})
-    cache_file = next(tmp_path.glob("*.json"))
-    cache_file.write_text(
-        json.dumps({"timestamp": time.time(), "response": "not a dict"}),
-        encoding="utf-8",
-    )
+def test_distinct_parts_produce_distinct_keys() -> None:
+    """Keys derived from different parts do not collide.
 
-    assert cache.get("prompt", "model") is None
+    Parts are joined with a separator that cannot appear inside them, so
+    ("ab", "c") and ("a", "bc") stay distinct.
+    """
+    assert ResponseCache.build_key("ab", "c") != ResponseCache.build_key("a", "bc")
 
 
-def test_cache_clear(tmp_path: Path) -> None:
-    cache = ResponseCache(cache_dir=tmp_path)
-    cache.set("prompt1", "model", {"text": "response1"})
-    cache.set("prompt2", "model", {"text": "response2"})
+def test_same_parts_produce_the_same_key() -> None:
+    """The key is a pure function of its parts."""
+    assert ResponseCache.build_key("a", "b") == ResponseCache.build_key("a", "b")
 
+
+def test_cache_directory_is_private(tmp_path: Path) -> None:
+    """Cached prompts hold device configs, so the directory is owner-only."""
+    cache = build(tmp_path)
+    mode = stat.S_IMODE((tmp_path / "cache").stat().st_mode)
+    assert mode == 0o700
+    cache.set("key", PAYLOAD)
+    entry = next((tmp_path / "cache").glob("*.json"))
+    assert stat.S_IMODE(entry.stat().st_mode) == 0o600
+
+
+def test_unreadable_entry_is_discarded(tmp_path: Path) -> None:
+    """A corrupt entry is removed rather than raising."""
+    cache = build(tmp_path)
+    cache.set("key", PAYLOAD)
+    entry = next((tmp_path / "cache").glob("*.json"))
+    entry.write_text("not json", encoding="utf-8")
+    assert cache.get("key") is None
+    assert not entry.exists()
+
+
+def test_non_object_entry_is_discarded(tmp_path: Path) -> None:
+    """A JSON document that is not an object is discarded."""
+    cache = build(tmp_path)
+    cache.set("key", PAYLOAD)
+    entry = next((tmp_path / "cache").glob("*.json"))
+    entry.write_text(json.dumps([1, 2]), encoding="utf-8")
+    assert cache.get("key") is None
+
+
+def test_clear_removes_every_entry(tmp_path: Path) -> None:
+    """Clearing reports how many entries it removed."""
+    cache = build(tmp_path)
+    cache.set("one", PAYLOAD)
+    cache.set("two", PAYLOAD)
     assert cache.clear() == 2
-    assert cache.get("prompt1", "model") is None
+    assert cache.get("one") is None
 
 
-def test_cache_cleanup_expired(tmp_path: Path) -> None:
-    cache = ResponseCache(cache_dir=tmp_path, ttl_seconds=3600.0)
-    cache.set("fresh", "model", {"text": "fresh"})
-    expired_file = tmp_path / "expired.json"
-    expired_file.write_text(
-        json.dumps({"timestamp": time.time() - 7200, "response": {"text": "old"}}),
+def test_cleanup_removes_only_expired_entries(tmp_path: Path) -> None:
+    """Expired entries go, live ones stay."""
+    cache = build(tmp_path, ttl_seconds=60.0)
+    cache.set("fresh", PAYLOAD)
+    stale = tmp_path / "cache" / f"{ResponseCache.build_key('stale')}.json"
+    stale.write_text(
+        json.dumps({"timestamp": time.time() - 3600, "payload": "x"}),
         encoding="utf-8",
     )
-
     assert cache.cleanup_expired() == 1
-    assert not expired_file.exists()
-    assert cache.get("fresh", "model") == {"text": "fresh"}
+    assert cache.get("fresh") == PAYLOAD
 
 
-def test_cache_cleanup_expired_skips_corrupt_files(tmp_path: Path) -> None:
-    cache = ResponseCache(cache_dir=tmp_path)
-    corrupt_file = tmp_path / "corrupt.json"
-    corrupt_file.write_text("not json", encoding="utf-8")
-
-    assert cache.cleanup_expired() == 0
-    assert corrupt_file.exists()
-
-
-def test_cache_missing_timestamp_treated_as_expired(tmp_path: Path) -> None:
-    cache = ResponseCache(cache_dir=tmp_path, ttl_seconds=3600.0)
-    cache.set("prompt", "model", {"text": "response"})
-    cache_file = next(tmp_path.glob("*.json"))
-    cache_file.write_text(
-        json.dumps({"timestamp": "invalid", "response": {"text": "response"}}),
-        encoding="utf-8",
-    )
-
-    assert cache.get("prompt", "model") is None
+def test_write_is_atomic(tmp_path: Path) -> None:
+    """No temporary file survives a successful write."""
+    cache = build(tmp_path)
+    cache.set("key", PAYLOAD)
+    assert not list((tmp_path / "cache").glob("*.tmp"))

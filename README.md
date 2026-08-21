@@ -1,294 +1,178 @@
-# hier-config-gpt
+# hier-config-ai
 
-[![PyPI version](https://badge.fury.io/py/hier-config-gpt.svg)](https://badge.fury.io/py/hier-config-gpt)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Documentation](https://img.shields.io/badge/docs-readthedocs-brightgreen.svg)](https://hier-config-gpt.readthedocs.io/)
+[![PyPI](https://img.shields.io/pypi/v/hier-config-ai.svg)](https://pypi.org/project/hier-config-ai/)
+[![Python](https://img.shields.io/pypi/pyversions/hier-config-ai.svg)](https://pypi.org/project/hier-config-ai/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-An enhanced hierarchical configuration library that integrates Large Language Model (LLM) capabilities for advanced network configuration analysis and remediation.
+Network configuration remediation driven by a language model, built on
+[hier-config](https://github.com/netdevops/hier-config) and
+[PydanticAI](https://ai.pydantic.dev/).
 
-## Overview
+## What it is for
 
-`hier-config-gpt` extends the powerful [hier-config](https://github.com/netdevops/hier-config) library by adding AI-driven custom remediation workflows. It addresses complex network configuration edge cases that fall outside standard negation and idempotency workflows by leveraging LLMs to dynamically generate remediation plans.
+hier-config already produces correct remediation for most configuration
+differences. Some it cannot: resequencing an access list, for example, needs an
+entry moved from one sequence number to another before a new entry can take its
+place. hier-config has no deterministic rule for that.
 
-### Key Features
+This library sends those sections to a model, then checks the answer.
 
-- **Multi-Provider LLM Support**: Works with OpenAI GPT, Anthropic Claude, and Ollama (self-hosted) models
-- **Intelligent Remediation**: Automatically generates complex configuration remediation steps
-- **Quorum Mode**: Optional consensus mechanism across multiple LLM providers for increased reliability
-- **Response Caching**: Built-in caching to reduce API costs and improve performance
-- **Rate Limiting**: Token bucket algorithm to prevent API throttling
-- **Configurable Prompts**: Customize prompt templates for your specific needs
-- **Production Ready**: Comprehensive error handling, retry logic, and logging
+## The plan is verified, not trusted
 
-## Installation
+The model's plan is applied to the running configuration and re-checked against
+the intended one. If it does not converge, the difference goes back to the model
+and it corrects itself.
 
-### Basic Installation
-
-```bash
-pip install hier-config-gpt
+```
+rule -> prompt -> model -> plan
+                            |
+                     apply and re-diff
+                            |
+                 converged? -- no --> tell the model what is still wrong
+                            |
+                           yes
+                            |
+                          HConfig
 ```
 
-### Install with Specific Provider(s)
+That loop is the point of the library. A plan that reads well and still leaves
+the device misconfigured is worse than no plan at all.
+
+## Install
 
 ```bash
-# OpenAI GPT models
-pip install hier-config-gpt[openai]
-
-# Anthropic Claude models
-pip install hier-config-gpt[anthropic]
-
-# Ollama (self-hosted) models
-pip install hier-config-gpt[ollama]
-
-# All providers
-pip install hier-config-gpt[all]
+pip install "hier-config-ai[anthropic]"    # or [openai], [google], [bedrock]
 ```
 
-## Quick Start
+Ollama, Azure OpenAI, and OpenRouter speak the OpenAI-compatible API, so they
+use the `openai` extra.
 
-### Basic Example with OpenAI
+## Use
 
 ```python
-import os
+import asyncio
+
 from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
-from hier_config_gpt import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config_gpt.clients import ChatGPTClient
 
-# Load configurations
-running_config = open("running_config.conf").read()
-generated_config = open("desired_config.conf").read()
-
-# Initialize workflow
-wfr = GPTWorkflowRemediation(
-    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
-    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
+from hier_config_ai import (
+    AIRemediationExample,
+    AIRemediationRule,
+    AIWorkflowRemediation,
 )
 
-# Define remediation rule
-description = """When remediating an access-list on Cisco IOS devices:
-1. Resequence the access-list so each sequence number is a multiple of 10
-2. Add a temporary 'permit any' statement at sequence 1
-3. Apply the required changes from the generated configuration
-4. Remove the temporary permit statement
-"""
+running = HConfig.from_text(Platform.CISCO_IOS, open("running.conf").read())
+intended = HConfig.from_text(Platform.CISCO_IOS, open("intended.conf").read())
 
-lineage = (MatchRule(startswith="ip access-list"),)
-example = GPTRemediationExample(
-    running_config="ip access-list extended TEST\n  12 permit ip host 10.0.0.1 any",
-    remediation_config="ip access-list resequence TEST 10 10\nip access-list extended TEST\n  1 permit ip any any\n  no 10\n  10 permit ip host 10.0.0.2 any\n  no 1"
+workflow = AIWorkflowRemediation(running, intended)
+workflow.set_model("anthropic:claude-sonnet-4-5")
+workflow.add_rule(
+    AIRemediationRule(
+        description=(
+            "Rewrite the access list so its entries end up in the intended "
+            "order with the intended sequence numbers."
+        ),
+        lineage=(MatchRule(startswith="ip access-list"),),
+        example=AIRemediationExample(
+            running_config="ip access-list extended EXAMPLE\n 20 permit ip any any",
+            remediation_config=(
+                "ip access-list extended EXAMPLE\n"
+                " no 20 permit ip any any\n"
+                " 10 permit ip 192.0.2.0 0.0.0.255 any\n"
+                " 20 permit ip any any"
+            ),
+        ),
+    )
 )
 
-gpt_rule = GPTRemediationRule(
-    description=description,
-    lineage=lineage,
-    example=example
-)
-
-# Add rule and set up client
-wfr.add_gpt_rule(gpt_rule)
-client = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
-wfr.set_gpt_client(client)
-
-# Generate remediation plan
-remediation = wfr.gpt_remediation_config()
-print(remediation)
+remediation = asyncio.run(workflow.aai_remediation_config())
+print("\n".join(remediation.to_lines()))
 ```
 
-### Using Anthropic Claude
+`ai_remediation_config()` is available for synchronous callers. Rules run
+concurrently, so a device with several rules costs one round trip, not several.
+
+## Reviewing a plan before you apply it
 
 ```python
-from hier_config_gpt.clients import ClaudeGPTClient
+result = await agent.run(prompt, deps=deps)
+plan = result.output
 
-client = ClaudeGPTClient(
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-    model="claude-3-5-sonnet-20241022"
-)
-wfr.set_gpt_client(client)
+plan.plan                        # the commands
+plan.reasoning                   # why the model chose them
+plan.confidence                  # "high" | "medium" | "low"
+plan.commands_requiring_review    # commands that can cut reachability
 ```
 
-### Using Ollama (Self-Hosted)
+Commands that would reload or wipe the device are rejected outright and never
+reach you. Commands that are risky but legitimate are listed in
+`commands_requiring_review` rather than blocked.
+
+## Choosing a model
+
+Any PydanticAI model name works:
 
 ```python
-from hier_config_gpt.clients import OllamaGPTClient
-
-client = OllamaGPTClient(
-    host="http://localhost:11434",
-    model="llama3.2"
-)
-wfr.set_gpt_client(client)
+workflow.set_model("anthropic:claude-sonnet-4-5")
+workflow.set_model("openai:gpt-4.1")
+workflow.set_model("google-gla:gemini-2.0-flash")
+workflow.set_model("bedrock:anthropic.claude-sonnet-4-5-20250929-v1:0")
 ```
 
-## Advanced Features
+For a self-hosted model, build the model object yourself and pass it to
+`set_agent(build_agent(model))`.
 
-### Response Caching
-
-Reduce API costs and improve performance with built-in caching:
+## Caching and rate limiting
 
 ```python
-from hier_config_gpt.clients import ChatGPTClient, CachedGPTClient, ResponseCache
+from hier_config_ai import ResponseCache, RateLimiter
 
-# Create base client
-base_client = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Wrap with caching (1 hour TTL)
-cache = ResponseCache(ttl_seconds=3600)
-client = CachedGPTClient(base_client, cache=cache)
-
-wfr.set_gpt_client(client)
+workflow.set_model(
+    "anthropic:claude-sonnet-4-5",
+    cache=ResponseCache(ttl_seconds=3600),
+    rate_limiter=RateLimiter(max_requests=60, time_window_seconds=60),
+)
 ```
 
-### Rate Limiting
+Both wrap the model rather than the client, so they cover tool calls and retries
+as well as the first request. Cached payloads contain device configurations, so
+the cache directory is created private to your user.
 
-Prevent API throttling with automatic rate limiting:
+## Failover and consensus
+
+For ordered failover across providers, use PydanticAI directly:
 
 ```python
-from hier_config_gpt.clients import ChatGPTClient, RateLimitedGPTClient
+from pydantic_ai.models.fallback import FallbackModel
 
-# Create base client
-base_client = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Wrap with rate limiting (60 requests per minute)
-client = RateLimitedGPTClient(
-    base_client,
-    max_requests=60,
-    time_window_seconds=60.0
-)
-
-wfr.set_gpt_client(client)
+workflow.set_agent(build_agent(FallbackModel("anthropic:claude-sonnet-4-5", "openai:gpt-4.1")))
 ```
 
-### Combining Caching and Rate Limiting
+To ask several models the same question and accept only an answer they agree
+on, use `consensus_plan()`. Votes are counted on parsed configuration, so two
+models that write the same configuration differently still agree.
 
-```python
-from hier_config_gpt.clients import (
-    ChatGPTClient,
-    CachedGPTClient,
-    RateLimitedGPTClient,
-    ResponseCache
-)
+## Evaluating changes
 
-# Create layered client: rate limiting -> caching -> base client
-base_client = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"))
-cached_client = CachedGPTClient(base_client, cache=ResponseCache())
-client = RateLimitedGPTClient(cached_client, max_requests=60)
+Retrieval, prompt edits, and model changes can make output worse as easily as
+better. `evals/` measures whether plans actually converge:
 
-wfr.set_gpt_client(client)
+```bash
+poetry install --with dev,evals --all-extras
+poetry run python evals/run_evals.py --model anthropic:claude-sonnet-4-5
 ```
 
-### Quorum Mode (Multi-Provider Consensus)
+This calls a real provider and costs money, so it is not part of CI.
 
-Use multiple LLM providers with majority voting for critical operations:
+## Development
 
-```python
-from hier_config_gpt.clients import (
-    ChatGPTClient,
-    ClaudeGPTClient,
-    OllamaGPTClient,
-    MultiProviderGPTClient
-)
-
-# Create multiple provider clients
-openai_client = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"))
-claude_client = ClaudeGPTClient(api_key=os.getenv("ANTHROPIC_API_KEY"))
-ollama_client = OllamaGPTClient()
-
-# Create quorum client (requires majority agreement)
-client = MultiProviderGPTClient(
-    providers=[openai_client, claude_client, ollama_client],
-    enable_quorum=True
-)
-
-wfr.set_gpt_client(client)
+```bash
+poetry install --with dev --all-extras
+poetry run python scripts/build.py lint-and-test
 ```
 
-### Custom Prompt Templates
-
-Customize the prompt structure for your specific needs:
-
-```python
-from hier_config_gpt import PromptTemplate, GPTWorkflowRemediation
-
-# Define custom template
-custom_template = """
-Generate network commands to transform the configuration.
-
-CURRENT STATE:
-{running_config}
-
-DESIRED STATE:
-{generated_config}
-
-RULES:
-{description}
-
-EXAMPLE:
-Running: {example_running_config}
-Remediation: {example_remediation_config}
-
-Return JSON with "plan" array of command strings.
-"""
-
-# Use custom template
-template = PromptTemplate(template=custom_template)
-wfr = GPTWorkflowRemediation(
-    running_config=running,
-    generated_config=generated,
-    prompt_template=template
-)
-```
-
-## Configuration Timeouts
-
-All clients support configurable timeouts:
-
-```python
-# OpenAI with 30-second timeout
-client = ChatGPTClient(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    timeout=30.0
-)
-
-# Claude with custom timeout
-client = ClaudeGPTClient(
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-    timeout=45.0
-)
-```
-
-## Use Cases
-
-- **Access List Resequencing**: Automatically handle complex ACL resequencing with temporary permit statements
-- **Interface Configuration**: Generate safe interface configuration changes with proper ordering
-- **Routing Protocol Updates**: Handle complex routing protocol transitions
-- **VLAN Reconfiguration**: Manage VLAN changes across multiple switches
-- **QoS Policy Updates**: Coordinate policy-map and class-map changes
-
-## Documentation
-
-Full documentation is available at [hier-config-gpt.readthedocs.io](https://hier-config-gpt.readthedocs.io/)
-
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## Security
-
-For security considerations and best practices, see [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## Credits
-
-- Built on top of [hier-config](https://github.com/netdevops/hier-config) by James Williams
-- Supports [OpenAI GPT](https://openai.com/), [Anthropic Claude](https://www.anthropic.com/), and [Ollama](https://ollama.ai/)
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/netdevops/hier-config-gpt/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/netdevops/hier-config-gpt/discussions)
-- **Documentation**: [ReadTheDocs](https://hier-config-gpt.readthedocs.io/)
+Apache 2.0. See [LICENSE](LICENSE).

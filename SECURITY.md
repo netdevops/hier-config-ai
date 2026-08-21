@@ -51,7 +51,7 @@ from pathlib import Path
 api_key = os.getenv("OPENAI_API_KEY")
 
 # Good: Load from secure file outside repository
-api_key = Path("~/.config/hier-config-gpt/api_key").expanduser().read_text().strip()
+api_key = Path("~/.config/hier-config-ai/api_key").expanduser().read_text().strip()
 
 # Good: Use secrets management
 from your_secrets_manager import get_secret
@@ -137,13 +137,12 @@ Use rate limiting to:
 - Detect potential security issues (e.g., compromised keys)
 
 ```python
-from hier_config_gpt.clients import RateLimitedGPTClient
+from hier_config_ai import RateLimiter
 
 # Limit to 60 requests per minute
-client = RateLimitedGPTClient(
-    base_client,
-    max_requests=60,
-    time_window_seconds=60.0
+workflow.set_model(
+    "anthropic:claude-sonnet-4-5",
+    rate_limiter=RateLimiter(max_requests=60, time_window_seconds=60.0),
 )
 ```
 
@@ -155,24 +154,28 @@ Use caching to:
 - Improve response times
 
 ```python
-from hier_config_gpt.clients import CachedGPTClient, ResponseCache
+from hier_config_ai import ResponseCache
 
 # Cache responses for 1 hour
-cache = ResponseCache(ttl_seconds=3600)
-client = CachedGPTClient(base_client, cache=cache)
+workflow.set_model(
+    "anthropic:claude-sonnet-4-5",
+    cache=ResponseCache(ttl_seconds=3600),
+)
 ```
 
 **Cache Security Considerations:**
 
-- Cache files are stored in `~/.hier_config_gpt/cache` by default
-- Cache files contain API responses (may include configuration data)
-- Set appropriate file permissions on the cache directory
-- Consider encrypting the cache directory if it contains sensitive data
-- Regularly clean up old cache files
+- Cache files are stored in `~/.hier_config_ai/cache` by default
+- Cached payloads contain device configurations, which are sensitive
+- Since 0.2.0 the cache directory is created `0o700` and entries `0o600`.
+  Earlier versions used the default umask
+- Consider encrypting the cache directory, or pointing `ResponseCache(cache_dir=...)`
+  at an encrypted volume
+- Call `cache.cleanup_expired()` or `cache.clear()` regularly
 
 ```bash
 # Set restrictive permissions on cache directory
-chmod 700 ~/.hier_config_gpt/cache
+chmod 700 ~/.hier_config_ai/cache
 ```
 
 ### Configuration Data

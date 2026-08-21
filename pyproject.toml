@@ -1,14 +1,15 @@
 [tool.poetry]
-name = "hier-config-gpt"
-version = "0.1.1a0"
-description = "An enhanced Hierarchical Configuration library that integrates GPT capabilities for advanced configuration analysis and remediation."
+name = "hier-config-ai"
+version = "0.2.0"
+description = "Hierarchical network configuration remediation driven by LLMs, built on hier-config and PydanticAI."
 authors = ["James Williams <james.williams@packetgeek.net>"]
 license = "Apache-2.0"
 readme = "README.md"
-homepage = "https://github.com/netdevops/hier-config-gpt"
-repository = "https://github.com/netdevops/hier-config-gpt"
-documentation = "https://hier-config-gpt.readthedocs.io/"
-keywords = ["network", "configuration", "automation", "gpt", "llm", "ai", "cisco", "networking"]
+homepage = "https://github.com/netdevops/hier-config-ai"
+repository = "https://github.com/netdevops/hier-config-ai"
+documentation = "https://hier-config-ai.readthedocs.io/"
+keywords = ["network", "configuration", "automation", "llm", "ai", "cisco", "networking", "pydantic-ai"]
+packages = [{include = "hier_config_ai"}]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -26,9 +27,33 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-pydantic = "^2.9.2,<3.0"
+pydantic = ">=2.12,<3.0"
 hier-config = {version = ">=4.0.0b1,<5.0", allow-prereleases = true}
+pydantic-ai-slim = ">=2.33.0,<3.0"
 
+# Optional provider SDKs. These MUST be declared here with `optional = true`
+# for `[tool.poetry.extras]` to publish them as wheel metadata. Declaring them
+# in optional *groups* instead silently produces extras with no requirements.
+# Constraints mirror the matching `pydantic-ai-slim` extra.
+openai = {version = ">=3.0.0", optional = true}
+tiktoken = {version = ">=0.12.0", optional = true}
+anthropic = {version = ">=1.0.0", optional = true}
+google-genai = {version = ">=2.18.0", optional = true}
+boto3 = {version = ">=1.42.63", optional = true}
+groq = {version = ">=0.25.0", optional = true}
+mistralai = {version = ">=2.9.2", optional = true}
+
+[tool.poetry.extras]
+# Ollama, Azure OpenAI, and OpenRouter all speak the OpenAI-compatible API,
+# so they are served by the `openai` extra.
+openai = ["openai", "tiktoken"]
+ollama = ["openai", "tiktoken"]
+anthropic = ["anthropic"]
+google = ["google-genai"]
+bedrock = ["boto3"]
+groq = ["groq"]
+mistral = ["mistralai"]
+all = ["openai", "tiktoken", "anthropic", "google-genai", "boto3", "groq", "mistralai"]
 
 [tool.poetry.group.dev.dependencies]
 flynt = "*"
@@ -39,39 +64,18 @@ pylint = "*"
 pylint-pydantic = "*"
 pyright = "*"
 pytest = "*"
+pytest-asyncio = "*"
 pytest-cov = "*"
 pytest-xdist = "*"
 ruff = "*"
 typer = "*"
 yamllint = "*"
 
-
-[tool.poetry.group.chatgpt]
+[tool.poetry.group.evals]
 optional = true
 
-[tool.poetry.group.chatgpt.dependencies]
-openai = "^1.54.4,<2.0"
-
-
-[tool.poetry.group.anthropic]
-optional = true
-
-[tool.poetry.group.anthropic.dependencies]
-anthropic = "^0.39.0,<1.0"
-
-
-[tool.poetry.group.ollama]
-optional = true
-
-[tool.poetry.group.ollama.dependencies]
-ollama = "^0.4.7,<1.0"
-
-
-[tool.poetry.extras]
-openai = ["openai"]
-anthropic = ["anthropic"]
-ollama = ["ollama"]
-all = ["openai", "anthropic", "ollama"]
+[tool.poetry.group.evals.dependencies]
+pydantic-evals = ">=2.33.0,<3.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -171,3 +175,13 @@ parametrize-values-type = "tuple"
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/*" = ["PLC2701", "S101"]
+# Development scripts are command-line tools; printing is their output.
+"scripts/*" = ["T201"]
+# Evaluator.evaluate overrides a base method, so it must stay an instance
+# method even where it does not touch self.
+"evals/*" = ["PLR6301", "T201"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--strict-markers --strict-config"

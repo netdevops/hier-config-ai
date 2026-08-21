@@ -24,7 +24,7 @@ What actually happened.
 ## Code Sample
 ```python
 # Minimal code to reproduce the issue
-from hier_config_gpt import GPTWorkflowRemediation
+from hier_config_ai import AIWorkflowRemediation
 
 # Your code here
 ```
@@ -35,7 +35,7 @@ Paste the full error message and stack trace here
 ```
 
 ## Environment
-- **hier-config-gpt version**: [e.g., 0.1.0]
+- **hier-config-ai version**: [e.g., 0.1.0]
 - **Python version**: [e.g., 3.11.0]
 - **Operating System**: [e.g., Ubuntu 22.04, macOS 13, Windows 11]
 - **LLM Provider**: [e.g., OpenAI, Anthropic, Ollama]
