@@ -11,8 +11,9 @@ The distinguishing feature is that plans are **verified, not trusted**: every pl
 ## Common Commands
 
 ```bash
-# Install (dev + every provider extra)
-poetry install --with dev --all-extras
+# Install (dev + evals + every provider extra).
+# The evals group is not optional for development: lint covers evals/.
+poetry install --with dev,evals --all-extras
 
 # Full lint + test suite (equivalent to CI)
 poetry run python scripts/build.py lint-and-test
@@ -29,7 +30,6 @@ poetry run pytest tests/test_validation.py -k acl
 poetry build && poetry run python scripts/check_packaging.py
 
 # Evaluation harness (calls real providers, costs money, not in CI)
-poetry install --with dev,evals --all-extras
 poetry run python evals/run_evals.py --model anthropic:claude-sonnet-4-5
 
 # Docs

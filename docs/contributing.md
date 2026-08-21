@@ -18,7 +18,7 @@ cd hier-config-ai
 
 2. Install dependencies with Poetry:
 ```bash
-poetry install --with dev --all-extras
+poetry install --with dev,evals --all-extras
 ```
 
 3. Run tests (95% coverage enforced):

@@ -17,7 +17,7 @@ Thank you for your interest in contributing to hier-config-ai! We welcome contri
    curl -sSL https://install.python-poetry.org | python3 -
 
    # Install project dependencies
-   poetry install --with dev --all-extras
+   poetry install --with dev,evals --all-extras
    ```
 
 4. **Create a branch** for your changes:

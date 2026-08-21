@@ -50,7 +50,7 @@ Never commit keys. See [SECURITY.md](https://github.com/netdevops/hier-config-ai
 ```bash
 git clone https://github.com/netdevops/hier-config-ai.git
 cd hier-config-ai
-poetry install --with dev --all-extras
+poetry install --with dev,evals --all-extras
 poetry run python scripts/build.py lint-and-test
 ```
 
