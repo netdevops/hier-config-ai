@@ -2,21 +2,30 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from hier_config import Platform, get_hconfig_driver
 from hier_config.models import MatchRule, NegationRule, NegationStrategy
+from pydantic_ai import NativeOutput, PromptedOutput
 
 from hier_config_ai.agent import (
     SYSTEM_PROMPT,
+    OutputMode,
     build_agent,
     describe_driver,
     negation_bullet,
+    output_spec,
     render_match_rules,
 )
 from hier_config_ai.cache import ResponseCache
 from hier_config_ai.model_wrappers import CachedModel, RateLimitedModel
+from hier_config_ai.models import AIPlanResponse
 from hier_config_ai.rate_limiter import RateLimiter
-from tests.conftest import CORRECT_PLAN, scripted_model
+from tests.conftest import CORRECT_PLAN, INCOMPLETE_PLAN, scripted_model
+
+if TYPE_CHECKING:
+    from hier_config_ai.deps import RemediationDeps
 
 
 def test_driver_description_states_the_real_indent_width() -> None:
@@ -155,3 +164,42 @@ def test_platform_prefixes_reach_the_prompt() -> None:
     described = describe_driver(get_hconfig_driver(Platform.JUNIPER_JUNOS))
     assert "`delete`" in described
     assert "`set`" in described
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    (
+        ("tool", AIPlanResponse),
+        ("native", NativeOutput),
+        ("prompted", PromptedOutput),
+    ),
+)
+def test_output_mode_selects_the_output_specification(
+    mode: OutputMode,
+    expected: type,
+) -> None:
+    """Each mode maps to the matching PydanticAI output specification.
+
+    Small self-hosted models are frequently unreliable at tool calling: they
+    nest the tool-call envelope inside the arguments, or emit the call as
+    plain text, and the run dies after exhausting its retries. Asking for a
+    JSON schema on the response instead makes them usable.
+    """
+    spec = output_spec(mode)
+    assert spec is expected if mode == "tool" else isinstance(spec, expected)
+
+
+def test_tools_can_be_turned_off() -> None:
+    """An agent can be built without tools for a model that cannot use them."""
+    agent = build_agent(scripted_model(CORRECT_PLAN), enable_tools=False)
+    assert agent is not None
+
+
+async def test_native_output_mode_still_validates(deps: RemediationDeps) -> None:
+    """Switching output mode does not switch off the convergence check."""
+    agent = build_agent(
+        scripted_model(INCOMPLETE_PLAN, CORRECT_PLAN),
+        output_mode="tool",
+    )
+    result = await agent.run("remediate", deps=deps)
+    assert result.output.plan == CORRECT_PLAN

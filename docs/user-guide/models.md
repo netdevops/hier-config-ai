@@ -56,16 +56,50 @@ Ollama, vLLM, and anything else with an OpenAI-compatible endpoint:
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from hier_config_ai import build_agent
+
 model = OpenAIChatModel(
-    "llama3.3",
+    "llama3.2:3b",
+    # api_key is a required placeholder; Ollama ignores it.
     provider=OpenAIProvider(base_url="http://localhost:11434/v1", api_key="ollama"),
 )
-workflow.set_agent(build_agent(model, driver=running.driver))
+
+workflow.set_agent(
+    build_agent(
+        model,
+        driver=running.driver,
+        output_mode="native",
+        settings={"temperature": 0.0},
+    )
+)
 ```
 
-Structured output depends on the model supporting tool calling. Small local
-models often do not, and will fail validation repeatedly rather than silently
-returning something wrong.
+!!! important "Two settings decide whether a local model works at all"
+    **`output_mode="native"`.** The default, `"tool"`, asks for structured
+    output through a tool call. Hosted models are reliable at that; small
+    self-hosted ones frequently are not. Measured against Ollama, `llama3.2:3b`
+    emitted the tool call as plain text and passed `plan` as a JSON-encoded
+    *string* rather than an array, while `qwen2.5-coder:7b` nested the whole
+    `{"name": ..., "arguments": ...}` envelope inside the arguments. Both then
+    exhausted their retries. `"native"` asks for a JSON schema on the response
+    itself, which both handle correctly.
+
+    **`temperature: 0.0`.** Ollama defaults to `0.8`. At that setting the same
+    model and prompt succeeded on one run and failed the next. Pin it to zero
+    and the results become reproducible.
+
+    With both applied, `llama3.2:3b` and `qwen2.5-coder:7b` each produced a
+    converging plan on the first request.
+
+`"prompted"` is a third option, which asks for JSON in the response text and
+parses it. Try it if a model supports neither of the others.
+
+Whichever mode you choose, the plan is still validated: a local model cannot
+return configuration that fails the convergence check.
+
+If a model cannot cope with having tools available at all, `enable_tools=False`
+removes them. That loses the check-your-work loop, so try it only after the
+settings above.
 
 ## Reading the result
 

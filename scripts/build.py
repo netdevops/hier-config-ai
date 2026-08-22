@@ -185,7 +185,7 @@ def _project_base_files(glob: str) -> Iterable[Path]:
 
 
 def _project_paths(glob: str) -> Iterable[Path]:
-    for base_dir in ("hier_config_ai", "tests", "scripts", "evals"):
+    for base_dir in ("hier_config_ai", "tests", "scripts", "evals", "examples"):
         base_path = _repo_path().joinpath(base_dir)
         if not base_path.exists():
             message = f"{base_path=} does not exist"

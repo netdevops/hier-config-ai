@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from hier_config.models import NegationStrategy
-from pydantic_ai import Agent
+from pydantic_ai import Agent, NativeOutput, PromptedOutput
 
 from .deps import RemediationDeps
 from .model_wrappers import CachedModel, RateLimitedModel
@@ -48,6 +48,29 @@ _MAX_RULES_SHOWN = 12
 
 # How many times the model may correct a rejected plan.
 DEFAULT_RETRIES = 3
+
+OutputMode = Literal["tool", "native", "prompted"]
+
+# How the model is asked to return structured output.
+#
+# "tool" is right for the hosted providers, which are reliable at tool calling.
+# Small self-hosted models frequently are not: they answer with the tool-call
+# envelope nested inside the arguments, or emit the call as plain text, and the
+# run dies after exhausting its retries. Those models usually do far better
+# with a JSON schema on the response itself, which is what "native" asks for.
+
+
+def output_spec(
+    mode: OutputMode,
+) -> (
+    type[AIPlanResponse] | NativeOutput[AIPlanResponse] | PromptedOutput[AIPlanResponse]
+):
+    """Return the output specification for a mode."""
+    if mode == "native":
+        return NativeOutput(AIPlanResponse)
+    if mode == "prompted":
+        return PromptedOutput(AIPlanResponse)
+    return AIPlanResponse
 
 
 def render_match_rules(match_rules: tuple[MatchRule, ...]) -> str:
@@ -146,6 +169,8 @@ def build_agent(  # ruff: ignore[too-many-arguments] - an options object would r
     retriever: Retriever | None = None,
     retries: int = DEFAULT_RETRIES,
     max_concurrency: int | None = None,
+    output_mode: OutputMode = "tool",
+    enable_tools: bool = True,
 ) -> Agent[RemediationDeps, AIPlanResponse]:
     """Build an agent that returns validated remediation plans.
 
@@ -161,6 +186,13 @@ def build_agent(  # ruff: ignore[too-many-arguments] - an options object would r
             this is supplied.
         retries: How many times the model may correct a rejected plan.
         max_concurrency: Limit on concurrent runs of this agent.
+        output_mode: How the model returns structured output. Use "native"
+            for a small self-hosted model, which is often unreliable at tool
+            calling.
+        enable_tools: Whether the model may call `test_remediation` and
+            `get_config_section`. Small models sometimes cannot answer at all
+            while tools are offered; turning them off loses the check-your-work
+            loop but keeps the run viable.
 
     Returns:
         An agent whose output is an `AIPlanResponse` already checked against
@@ -182,11 +214,11 @@ def build_agent(  # ruff: ignore[too-many-arguments] - an options object would r
 
     agent: Agent[RemediationDeps, AIPlanResponse] = Agent(
         wrapped,
-        output_type=AIPlanResponse,
+        output_type=output_spec(output_mode),
         deps_type=RemediationDeps,
         instructions=instructions,
         model_settings=settings,
-        tools=build_tools(retriever),
+        tools=build_tools(retriever) if enable_tools else [],
         retries=retries,
         max_concurrency=max_concurrency,
     )

@@ -180,6 +180,8 @@ parametrize-values-type = "tuple"
 # Evaluator.evaluate overrides a base method, so it must stay an instance
 # method even where it does not touch self.
 "evals/*" = ["PLR6301", "T201"]
+# Examples are scripts meant to be read and run; printing is the point.
+"examples/*" = ["T201"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

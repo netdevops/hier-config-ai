@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from hier_config import HConfig, WorkflowRemediation
 
-from .agent import DEFAULT_RETRIES, build_agent
+from .agent import DEFAULT_RETRIES, OutputMode, build_agent
 from .deps import RemediationDeps, Retriever
 from .exceptions import AIClientInitializationError, RemediationError
 from .models import AIPlanResponse, AIRemediationContext
@@ -102,7 +102,7 @@ class AIWorkflowRemediation(WorkflowRemediation):
         self._agent: Agent[RemediationDeps, AIPlanResponse] | None = None
         self._usage: list[RunUsage] = []
 
-    def set_model(
+    def set_model(  # ruff: ignore[too-many-arguments] - mirrors build_agent
         self,
         model: Model | str,
         *,
@@ -110,6 +110,8 @@ class AIWorkflowRemediation(WorkflowRemediation):
         cache: ResponseCache | None = None,
         rate_limiter: RateLimiter | None = None,
         retries: int = DEFAULT_RETRIES,
+        output_mode: OutputMode = "tool",
+        enable_tools: bool = True,
     ) -> None:
         """Build an agent for `model` and use it for remediation.
 
@@ -127,6 +129,8 @@ class AIWorkflowRemediation(WorkflowRemediation):
             retriever=self.retriever,
             retries=retries,
             max_concurrency=self.max_concurrency,
+            output_mode=output_mode,
+            enable_tools=enable_tools,
         )
 
     def set_agent(self, agent: Agent[RemediationDeps, AIPlanResponse]) -> None:

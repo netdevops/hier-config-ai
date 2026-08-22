@@ -17,7 +17,7 @@ AIWorkflowRemediation(
 
 | Method | Description |
 | --- | --- |
-| `set_model(model, *, settings=None, cache=None, rate_limiter=None, retries=3)` | Build an agent for a model name or `Model`. |
+| `set_model(model, *, settings=None, cache=None, rate_limiter=None, retries=3, output_mode="tool", enable_tools=True)` | Build an agent for a model name or `Model`. |
 | `set_agent(agent)` | Use a pre-built agent. |
 | `add_rule(rule)` | Add a remediation rule. |
 | `clear_rules()` | Remove every rule. |
@@ -85,8 +85,14 @@ build_agent(
     rate_limiter: RateLimiter | None = None,
     retriever: Retriever | None = None,
     retries: int = 3,
+    max_concurrency: int | None = None,
+    output_mode: Literal["tool", "native", "prompted"] = "tool",
+    enable_tools: bool = True,
 ) -> Agent[RemediationDeps, AIPlanResponse]
 ```
+
+Set `output_mode="native"` for a small self-hosted model; the default
+`"tool"` mode relies on tool calling, which they are often unreliable at.
 
 Passing `driver` adds that platform's indentation, section exits, replacement
 negations, and idempotent commands to the system prompt.

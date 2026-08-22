@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `output_mode` on `build_agent()` and `set_model()`, selecting how the model
+  returns structured output: `"tool"` (default), `"native"`, or `"prompted"`.
+  Small self-hosted models are frequently unreliable at tool calling, so the
+  default failed against every local model tested. `"native"` asks for a JSON
+  schema on the response instead, which they handle.
+- `enable_tools` on `build_agent()` and `set_model()`, for models that cannot
+  cope with tools being offered.
+
 ## [0.2.1a0] - 2026-08-21
 
 Prerelease of the 0.2.0 rewrite below.
