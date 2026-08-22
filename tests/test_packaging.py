@@ -6,7 +6,7 @@ test could see it: the fault was in the built wheel, not in the source.
 
 from __future__ import annotations
 
-from importlib.metadata import version
+from pathlib import Path
 
 import hier_config_ai
 from scripts.check_packaging import find_empty_extras
@@ -45,10 +45,16 @@ def test_metadata_without_extras_passes() -> None:
     assert find_empty_extras("Name: x\nRequires-Dist: pydantic\n") == []
 
 
-def test_reported_version_matches_the_distribution() -> None:
-    """`__version__` comes from package metadata, so it cannot drift.
+def test_version_is_not_hardcoded_in_the_package() -> None:
+    """`__version__` is read from metadata rather than written in the source.
 
-    Releases bump `pyproject.toml` with `poetry version`, and nothing updated a
-    hardcoded literal, so the two disagreed after every release.
+    Releases bump `pyproject.toml` with `poetry version` and nothing updated a
+    hardcoded literal, so the two disagreed after every release. Asserting
+    `__version__ == version(...)` would only restate the implementation, so
+    this checks the source carries no literal instead.
     """
-    assert hier_config_ai.__version__ == version("hier-config-ai")
+    source = (
+        Path(__file__).resolve().parent.parent / "hier_config_ai" / "_version.py"
+    ).read_text(encoding="utf-8")
+    assert '__version__ = version("hier-config-ai")' in source
+    assert hier_config_ai.__version__

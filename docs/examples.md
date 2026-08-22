@@ -86,12 +86,12 @@ zero are what make a small model usable; see
 [Models and Agents](user-guide/models.md).
 
 ```python
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.models.ollama import OllamaModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
-model = OpenAIChatModel(
+model = OllamaModel(
     "qwen2.5-coder:7b",
-    provider=OpenAIProvider(base_url="http://localhost:11434/v1", api_key="ollama"),
+    provider=OllamaProvider(base_url="http://localhost:11434/v1"),
 )
 workflow.set_model(
     model,
@@ -181,15 +181,14 @@ workflow.set_agent(
 ## Self-hosted model
 
 ```python
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
-from hier_config_ai import build_agent
+from pydantic_ai.models.ollama import OllamaModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
-model = OpenAIChatModel(
-    "llama3.3",
-    provider=OpenAIProvider(base_url="http://localhost:11434/v1", api_key="ollama"),
+model = OllamaModel(
+    "qwen2.5-coder:7b",
+    provider=OllamaProvider(base_url="http://localhost:11434/v1"),
 )
-workflow.set_agent(build_agent(model, driver=running.driver))
+workflow.set_model(model, output_mode="native", settings={"temperature": 0.0})
 ```
 
 Structured output needs tool calling. Small local models often lack it, and will

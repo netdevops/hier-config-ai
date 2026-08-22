@@ -38,30 +38,28 @@ Python and maintained per access list.
 Described as a rule instead:
 
 ```python
-workflow.add_rule(
-    AIRemediationRule(
-        description=(
-            "Rewrite the access list so its entries end up with the intended "
-            "sequence numbers.\n"
-            "An entry cannot be renumbered in place. Delete it by number with "
-            "'no <seq>', then add it back at its new number.\n"
-            "The list must never deny live traffic while it is being "
-            "rewritten. Add '1 permit ip any any' as the first command, and "
-            "remove it with 'no 1' as the last."
+acl_rule = AIRemediationRule(
+    description=(
+        "Rewrite the access list so its entries end up with the intended "
+        "sequence numbers.\n"
+        "An entry cannot be renumbered in place. Delete it by number with "
+        "'no <seq>', then add it back at its new number.\n"
+        "The list must never deny live traffic while it is being "
+        "rewritten. Add '1 permit ip any any' as the first command, and "
+        "remove it with 'no 1' as the last."
+    ),
+    lineage=(MatchRule(startswith="ip access-list"),),
+    example=AIRemediationExample(
+        running_config="ip access-list extended EXAMPLE\n 15 permit ip any any",
+        remediation_config=(
+            "ip access-list extended EXAMPLE\n"
+            "  1 permit ip any any\n"
+            "  no 15\n"
+            "  10 permit ip 192.0.2.0 0.0.0.255 any\n"
+            "  20 permit ip any any\n"
+            "  no 1"
         ),
-        lineage=(MatchRule(startswith="ip access-list"),),
-        example=AIRemediationExample(
-            running_config="ip access-list extended EXAMPLE\n 15 permit ip any any",
-            remediation_config=(
-                "ip access-list extended EXAMPLE\n"
-                "  1 permit ip any any\n"
-                "  no 15\n"
-                "  10 permit ip 192.0.2.0 0.0.0.255 any\n"
-                "  20 permit ip any any\n"
-                "  no 1"
-            ),
-        ),
-    )
+    ),
 )
 ```
 
@@ -146,7 +144,7 @@ intended = HConfig.from_text(Platform.CISCO_IOS, open("intended.conf").read())
 
 workflow = AIWorkflowRemediation(running, intended)
 workflow.set_model("anthropic:claude-sonnet-4-5")
-workflow.add_rule(acl_resequencing_rule)   # as defined above
+workflow.add_rule(acl_rule)   # the AIRemediationRule shown above
 
 remediation = asyncio.run(workflow.aai_remediation_config())
 print("\n".join(remediation.to_lines()))

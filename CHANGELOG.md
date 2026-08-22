@@ -18,12 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model given no tools is no longer told to call them.
 - Plans may add scaffolding and take it away again. Resequencing an access list
   safely needs a temporary allow-all so the list never denies live traffic
-  mid-change. The plan is now applied one command at a time rather than merged
-  in a single pass, so by the time the removal is evaluated the temporary entry
-  exists and the pair cancels through the driver's own negation handling. This
-  works on every platform and needs no pattern-matching of command text.
-  Forgetting the cleanup is still caught, and so is a plan that deletes an entry
-  and puts it straight back without renumbering it.
+  mid-change. The allowance is deliberately narrow: the addition must come
+  before its removal, and the removal must name its target exactly or by
+  sequence number. Forgetting the cleanup is still caught, so is a plan that
+  deletes an entry and puts it straight back, and scaffolding is surfaced in
+  `commands_requiring_review` because it does execute on the device.
+- Destructive commands are matched as stems. IOS accepts any unambiguous
+  abbreviation, so `relo` reloads a router and `wr era` wipes it; requiring the
+  full spelling let both through.
 - `examples/ollama_acl.py` and `examples/ollama_quickstart.py`, both
   runnable.
 - "Replacing a Custom Workflow" documentation, putting access-list resequencing

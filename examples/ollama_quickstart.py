@@ -34,8 +34,6 @@ from hier_config_ai import (
 
 MODEL_NAME = sys.argv[1] if len(sys.argv) > 1 else "qwen2.5-coder:7b"
 
-# Ollama speaks the OpenAI-compatible API, so it goes through OpenAIChatModel.
-# The api_key is a required placeholder; Ollama ignores it.
 # PydanticAI's own Ollama provider, not a bare OpenAI-compatible client. It
 # carries a per-model-family profile and tells the model layer that Ollama
 # supports a JSON schema on the response but not strict tool definitions --
@@ -101,4 +99,5 @@ async def main() -> None:
         )
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

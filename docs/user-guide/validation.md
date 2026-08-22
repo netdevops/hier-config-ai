@@ -71,22 +71,33 @@ list is the standard case: a temporary `1 permit ip any any` goes in first so
 the list never denies live traffic while its entries are renumbered, and comes
 out at the end.
 
-This works because the plan is applied one command at a time rather than merged
-in a single pass. By the time the removal is evaluated, the temporary entry is
-present, so the pair cancels through the platform driver's ordinary negation
-handling — no pattern-matching of the command text, and no per-platform special
-case.
+Two rules keep that allowance narrow, and both matter.
 
-Order also separates scaffolding from churn. A plan that deletes an entry and
-puts it straight back has renumbered nothing, and folding the commands in order
-catches that. Forgetting the cleanup is likewise rejected: a `permit ip any any`
-left in a live access list is a hole.
+**The addition must come before its removal.** A plan that deletes an entry and
+puts it straight back has renumbered nothing, and without the ordering check it
+would read as a cancelled pair.
+
+**The removal must name its target exactly, or by sequence number.** Anything
+looser lets a plan hide a command behind a negation that does not undo it. `no
+ip` would cancel `ip route 0.0.0.0 0.0.0.0 198.51.100.66` in a prediction, while
+on the device it is `% Incomplete command` and the route stays. Cancellation in
+a model is not cancellation on a router.
+
+Forgetting the cleanup is still rejected: a `permit ip any any` left in a live
+access list is a hole.
+
+!!! note "Scaffolding is surfaced for review"
+    It is excluded from the convergence comparison because it leaves nothing
+    behind, but it does execute on the device. Every scaffolding command appears
+    in `commands_requiring_review`.
 
 ## Guardrails
 
 Commands that would take the device out of service are rejected outright and
 never reach you: `reload`, `reboot`, `erase`, `write erase`, `format`,
-`boot system`, `request system zeroize`, `execute factoryreset`, and similar.
+`request system zeroize`, `execute factoryreset`, `crypto key zeroize`, and
+similar. They are matched as stems, because IOS accepts any unambiguous
+abbreviation — `relo` reloads a router and `wr era` wipes it.
 Every platform's spelling is matched on every platform, because matching one too
 many is harmless while missing one lets a plan reboot a router mid-change.
 

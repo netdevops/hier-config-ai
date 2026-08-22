@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from hier_config import HConfig, Platform, get_hconfig_driver
+from hier_config.models import MatchRule
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
@@ -21,6 +22,7 @@ from hier_config_ai.validation import (
     review_patterns,
     validate_plan,
 )
+from hier_config_ai.workflows import scoped_config
 from tests.conftest import (
     CORRECT_PLAN,
     INCOMPLETE_PLAN,
@@ -70,12 +72,12 @@ def test_plan_adding_unwanted_config_is_detected(deps: RemediationDeps) -> None:
 
 def test_converged_plan_passes(deps: RemediationDeps) -> None:
     """The convergence check accepts a plan that reaches the target."""
-    assert check_converges(deps, parse_plan(deps, CORRECT_PLAN)) is None
+    assert check_converges(deps, CORRECT_PLAN, parse_plan(deps, CORRECT_PLAN)) is None
 
 
 def test_unconverged_plan_is_reported(deps: RemediationDeps) -> None:
     """The convergence check describes what an incomplete plan left undone."""
-    problem = check_converges(deps, parse_plan(deps, INCOMPLETE_PLAN))
+    problem = check_converges(deps, INCOMPLETE_PLAN, parse_plan(deps, INCOMPLETE_PLAN))
     assert problem is not None
     assert "does not produce the intended" in problem
 
@@ -394,4 +396,80 @@ def test_validator_allows_scaffolding_end_to_end() -> None:
     that path and not only in the helper underneath it.
     """
     acl = acl_deps()
-    assert check_converges(acl, parse_plan(acl, ACL_TRAFFIC_SAFE)) is None
+    assert (
+        check_converges(acl, ACL_TRAFFIC_SAFE, parse_plan(acl, ACL_TRAFFIC_SAFE))
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("hidden", "cancel"),
+    (
+        # `no ip` is `% Incomplete command` on a device: the route survives.
+        ("ip route 0.0.0.0 0.0.0.0 198.51.100.66", "no ip"),
+        ("username backdoor privilege 15 secret 0 Pw", "no username"),
+        ("snmp-server community public RW", "no snmp-server"),
+        ("boot system flash:evil.bin", "no boot"),
+    ),
+)
+def test_a_shorthand_negation_cannot_hide_a_command(
+    deps: RemediationDeps,
+    hidden: str,
+    cancel: str,
+) -> None:
+    """A command is only scaffolding when its removal names it exactly.
+
+    Applying the plan one command at a time made anything hier-config would
+    cancel invisible to the convergence check, including negations that do
+    nothing on a real device. A plan could append `no ip` and smuggle a default
+    route past a check labelled "validated".
+    """
+    _, unwanted = remaining_difference(deps, [*CORRECT_PLAN, hidden, cancel])
+    assert any(hidden in line for line in unwanted)
+
+
+def test_abbreviated_destructive_commands_are_rejected(
+    deps: RemediationDeps,
+) -> None:
+    """IOS accepts any unambiguous abbreviation, so `relo` reloads a router."""
+    problem = check_guardrails(deps, AIPlanResponse(plan=[*CORRECT_PLAN, "relo"]))
+    assert problem is not None
+    assert "reload or wipe" in problem
+
+
+def test_scaffolding_is_surfaced_for_review() -> None:
+    """Scaffolding is excluded from convergence, but it still runs.
+
+    It leaves nothing behind, which is why the comparison ignores it — but an
+    operator pasting the plan onto a device does execute it.
+    """
+    response = AIPlanResponse(plan=ACL_BARE_SEQUENCE)
+    assert check_guardrails(acl_deps(), response) is None
+    assert any("1 permit ip any any" in c for c in response.commands_requiring_review)
+
+
+def test_sectional_overwrite_platforms_still_converge() -> None:
+    """A correct plan for an overwrite-style section is accepted.
+
+    Cisco XR replaces whole `template` sections rather than merging them.
+    Applying such a plan a command at a time made the driver collide with
+    itself and raise, so every candidate was rejected.
+    """
+    running = HConfig.from_text(
+        Platform.CISCO_XR, "template PEER\n remote-as 65000\n description old\n"
+    )
+    intended = HConfig.from_text(
+        Platform.CISCO_XR, "template PEER\n remote-as 65001\n description new\n"
+    )
+    lineage = (MatchRule(startswith="template"),)
+    deps = RemediationDeps(
+        running_config=scoped_config(running, lineage),
+        generated_config=scoped_config(intended, lineage),
+    )
+    overwrite_plan = [
+        "no template PEER",
+        "template PEER",
+        "  remote-as 65001",
+        "  description new",
+    ]
+    assert plan_converges(deps, overwrite_plan)

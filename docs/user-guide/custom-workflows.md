@@ -40,8 +40,10 @@ The guide's answer is to build the remediation by hand — insert a temporary
 allow-all, walk the default remediation renumbering each entry, then clean up:
 
 ```python
+remediation = wfr.remediation_config
+
 custom_remediation = HConfig(wfr.running_config.driver)
-acl = custom_remediation.get_child(equals="ip access-list extended TEST")
+acl = custom_remediation.add_child("ip access-list extended TEST")
 acl.add_child("1 permit ip any any")          # temporary allow-all
 
 for line in remediation.all_children():
@@ -55,6 +57,9 @@ for line in remediation.all_children():
 acl.add_child("no 1")                          # cleanup
 ```
 
+*(Adapted from the guide; the shape is what matters here, not the exact
+renumbering rule.)*
+
 That works. It is also code you own: it hardcodes one access list by name,
 assumes rounding to the nearest ten is the right renumbering, and has to be
 written again for the next section that needs judgment. Every such rule is
@@ -63,6 +68,8 @@ another branch to test and maintain.
 ## The same thing, described
 
 ```python
+import asyncio
+
 from hier_config.models import MatchRule
 from hier_config_ai import (
     AIRemediationExample,
@@ -98,7 +105,7 @@ workflow.add_rule(
     )
 )
 
-remediation = await workflow.aai_remediation_config()
+remediation = asyncio.run(workflow.aai_remediation_config())
 ```
 
 Which produces:

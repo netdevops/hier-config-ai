@@ -9,7 +9,8 @@ work instead of failing the run.
 from __future__ import annotations
 
 import re
-from functools import cache, reduce
+from collections import defaultdict
+from functools import cache
 from typing import TYPE_CHECKING, NoReturn
 
 from hier_config import HConfig
@@ -29,20 +30,25 @@ if TYPE_CHECKING:
 # from config mode -- `do reload` is a reload. The convergence check happens to
 # reject these too, but the guardrail is the control the documentation promises,
 # so it does not lean on the second layer.
+# Matched as stems, not whole words. IOS accepts any unambiguous abbreviation,
+# so `relo` reloads a router and `wr era` wipes it; requiring the full spelling
+# let both straight through.
+#
+# `boot system flash:...` is deliberately absent: it is ordinary golden-config
+# content, and hard-rejecting it would make any intended config that sets a
+# boot image unreachable.
 _DESTRUCTIVE_COMMANDS: tuple[str, ...] = (
-    r"reload\b",
-    r"reboot\b",
-    r"erase\b",
-    r"write\s+erase\b",
-    r"format\b",
-    r"delete\s+/force\b",
-    # `boot system flash:...` is ordinary golden-config content, not a
-    # reload, so it is deliberately absent: hard-rejecting it would make
-    # any intended config that sets a boot image unreachable.
-    r"request\s+system\s+(reboot|halt|zeroize|power-off)\b",
-    r"execute\s+(reboot|shutdown|factoryreset|formatlogdisk)\b",
-    r"reset\s+saved-configuration\b",
-    r"restore\s+factory-default\b",
+    r"relo",
+    r"reboo",
+    r"era",
+    r"wri?t?e?\s+era",
+    r"forma",
+    r"delete\s+/force",
+    r"request\s+system\s+(reboo|halt|zeroiz|power-off)",
+    r"execute\s+(reboo|shutdown|factoryreset|formatlogdisk)",
+    r"reset\s+saved-config",
+    r"restore\s+factory-default",
+    r"crypto\s+key\s+zeroiz",
 )
 
 DESTRUCTIVE_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
@@ -120,54 +126,55 @@ def parse_plan(deps: RemediationDeps, plan: list[str]) -> HConfig:
     return HConfig.from_lines(deps.driver, plan)
 
 
-def ordered_segments(deps: RemediationDeps, plan_config: HConfig) -> list[HConfig]:
-    """Split a parsed plan into one config per command, in order.
+def scaffolding(plan: list[str], negation_prefix: str) -> set[str]:
+    """Return commands the plan adds and then removes, in that order.
 
-    Each segment carries its ancestor path, so a child command is applied under
-    the parent it belongs to rather than at the top level.
+    A remediation may need commands that do not survive it. Resequencing an
+    access list wants a temporary `permit ip any any` first so the list never
+    denies live traffic while its entries are renumbered, removed again at the
+    end. Their net effect on the device is nothing, so they are excluded from
+    the comparison.
+
+    Two things keep that allowance narrow, and both are load-bearing.
+
+    The addition must come *before* its removal. A plan that deletes an
+    access-list entry and puts it straight back has renumbered nothing, and
+    without the ordering check it would read as a cancelled pair.
+
+    The removal must name its target exactly, or by sequence number. Anything
+    looser lets a plan hide a command behind a negation that does not actually
+    undo it: `no ip` cancels `ip route 0.0.0.0 0.0.0.0 198.51.100.66` in a
+    prediction, while on the device it is `% Incomplete command` and the route
+    stays. Cancellation in a model is not cancellation on a router.
     """
-    segments: list[HConfig] = []
-    for child in plan_config.all_children():
-        if child.children:
+    prefix = f"{negation_prefix.strip()} "
+    added: set[str] = set()
+    added_by_sequence: dict[str, list[str]] = defaultdict(list)
+    pairs: set[str] = set()
+
+    for raw in plan:
+        command = raw.strip()
+        if command.startswith(prefix):
+            target = command[len(prefix) :].strip()
+            matched = {target} & added
+            if target.isdigit():
+                matched.update(added_by_sequence.get(target, ()))
+            if matched:
+                pairs |= matched | {command}
             continue
-        segment = HConfig(deps.driver)
-        segment.add_ancestor_copy_of(child)
-        segments.append(segment)
-    return segments
 
+        added.add(command)
+        head, separator, _ = command.partition(" ")
+        if separator and head.isdigit():
+            added_by_sequence[head].append(command)
 
-def plan_future(deps: RemediationDeps, plan_config: HConfig) -> HConfig:
-    """Predict the configuration the plan produces, applying it in order.
-
-    Note:
-        The commands are folded one at a time rather than merged in a single
-        pass, and that is the whole point. A remediation may need scaffolding
-        that does not survive it — resequencing an access list wants a
-        temporary `permit ip any any` first so the list never denies live
-        traffic while its entries are renumbered, removed again at the end.
-
-        Applied as one merged config, the removal is evaluated against the
-        running config, where the temporary entry has never existed, so both
-        halves survive and look like configuration left behind. Applied in
-        order, the entry is present by the time its removal is evaluated and
-        the pair cancels through the driver's ordinary negation handling.
-
-        Order also distinguishes add-then-remove from remove-then-re-add. A
-        plan that deletes an access-list entry and puts it straight back has
-        not renumbered anything, and folding catches that where matching the
-        text for pairs cannot.
-
-    """
-    return reduce(
-        lambda config, segment: config.future(segment),
-        ordered_segments(deps, plan_config),
-        deps.running_config,
-    )
+    return pairs
 
 
 def difference_for_config(
     deps: RemediationDeps,
     plan_config: HConfig,
+    plan: list[str],
 ) -> tuple[list[str], list[str]]:
     """Compare what a parsed plan would produce against what it must produce.
 
@@ -192,11 +199,16 @@ def difference_for_config(
         would fail correct plans and trap the model in a retry loop.
 
     """
-    actual = list(plan_future(deps, plan_config).to_lines())
+    actual = list(deps.running_config.future(plan_config).to_lines())
     actual_set = frozenset(actual)
+    transient = scaffolding(plan, deps.driver.negation_prefix)
 
     missing = [line for line in deps.canonical_lines if line not in actual_set]
-    unwanted = [line for line in actual if line not in deps.canonical_line_set]
+    unwanted = [
+        line
+        for line in actual
+        if line not in deps.canonical_line_set and line.strip() not in transient
+    ]
     return missing, unwanted
 
 
@@ -205,7 +217,7 @@ def remaining_difference(
     plan: list[str],
 ) -> tuple[list[str], list[str]]:
     """Parse `plan` and compare it against the intended configuration."""
-    return difference_for_config(deps, parse_plan(deps, plan))
+    return difference_for_config(deps, parse_plan(deps, plan), plan)
 
 
 def plan_converges(deps: RemediationDeps, plan: list[str]) -> bool:
@@ -261,10 +273,14 @@ def check_guardrails(deps: RemediationDeps, output: AIPlanResponse) -> str | Non
     ]
 
     patterns = review_patterns(deps.driver.negation_prefix)
+    # Scaffolding is excluded from the convergence comparison because it leaves
+    # nothing behind, but it does run on the device. An operator has to see it.
+    transient = scaffolding(output.plan, deps.driver.negation_prefix)
     flagged = [
         command
         for command in output.plan
-        if any(pattern.search(command) for pattern in patterns)
+        if command.strip() in transient
+        or any(pattern.search(command) for pattern in patterns)
     ]
     # Merged, not replaced: the model may flag a risky command no pattern
     # covers, and overwriting would drop it while still reading as complete.
@@ -281,9 +297,13 @@ def check_guardrails(deps: RemediationDeps, output: AIPlanResponse) -> str | Non
     return None
 
 
-def check_converges(deps: RemediationDeps, plan_config: HConfig) -> str | None:
+def check_converges(
+    deps: RemediationDeps,
+    plan: list[str],
+    plan_config: HConfig,
+) -> str | None:
     """Reject a plan that does not turn the running config into the target."""
-    missing, unwanted = difference_for_config(deps, plan_config)
+    missing, unwanted = difference_for_config(deps, plan_config, plan)
     if not missing and not unwanted:
         return None
 
@@ -316,7 +336,7 @@ def validate_plan(
     if problem := check_guardrails(deps, output):
         reject(deps, problem)
 
-    if problem := check_converges(deps, plan_config):
+    if problem := check_converges(deps, output.plan, plan_config):
         reject(deps, problem)
 
     return output

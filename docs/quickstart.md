@@ -25,6 +25,8 @@ The existing entry has to move from 12 to 20 so the new entry can take 10.
 ## The rule
 
 ```python
+import asyncio
+
 from hier_config.models import MatchRule
 from hier_config_ai import (
     AIRemediationExample,
@@ -60,7 +62,7 @@ workflow.add_rule(
     )
 )
 
-remediation = await workflow.aai_remediation_config()
+remediation = asyncio.run(workflow.aai_remediation_config())
 print("\n".join(remediation.to_lines()))
 ```
 
