@@ -132,6 +132,10 @@ def transient_commands(plan: list[str], negation_prefix: str) -> set[str]:
     the commands are applied in, so both halves of that pair look like
     configuration the plan leaves behind. Their net effect on the device is
     nothing, so they are excluded from the comparison.
+
+    Two spellings of the removal are recognised. `no <command>` repeats the
+    line, and `no <sequence>` names only its number, which is how an engineer
+    would actually delete an access-list entry.
     """
     stripped = [command.strip() for command in plan]
     prefix = negation_prefix.strip()
@@ -140,10 +144,25 @@ def transient_commands(plan: list[str], negation_prefix: str) -> set[str]:
     for command in stripped:
         if not command.startswith(f"{prefix} "):
             continue
-        added = command[len(prefix) :].strip()
-        if added in stripped:
-            transient.add(added)
-            transient.add(command)
+
+        target = command[len(prefix) :].strip()
+        if not target:
+            continue
+
+        if target in stripped:
+            transient |= {target, command}
+            continue
+
+        # `no 1` removes the entry numbered 1, whatever the rest of it says.
+        if target.isdigit():
+            removed = {
+                line
+                for line in stripped
+                if line.split(maxsplit=1)[:1] == [target] and line != command
+            }
+            if removed:
+                transient |= removed | {command}
+
     return transient
 
 

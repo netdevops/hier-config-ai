@@ -53,23 +53,25 @@ intended = HConfig.from_text(
 RULE = AIRemediationRule(
     description=(
         "Rewrite the access list so its entries end up with the intended "
-        "sequence numbers.\n"
+        "sequence numbers using the command:\n"
+        "ip access-list resequence <acl_name> 10 10\n"
         "An entry cannot be renumbered in place: remove the old one with "
-        "'no <seq> <rest of the line>', then add it back at its new number.\n"
+        "'no <seq>', then add it back at its new number.\n"
         "The list must never deny live traffic while it is being rewritten. "
         "Add '1 permit ip any any' as the first command, and remove it with "
-        "'no 1 permit ip any any' as the last."
+        "'no 1' as the last."
     ),
     lineage=(MatchRule(startswith="ip access-list"),),
     example=AIRemediationExample(
         running_config="ip access-list extended EXAMPLE\n 15 permit ip any any",
         remediation_config=(
+            "ip access-list resequence TEST 10 10\n"
             "ip access-list extended EXAMPLE\n"
             "  1 permit ip any any\n"
-            "  no 15 permit ip any any\n"
+            "  no 15\n"
             "  10 permit ip 192.0.2.0 0.0.0.255 any\n"
             "  20 permit ip any any\n"
-            "  no 1 permit ip any any"
+            "  no 1"
         ),
     ),
 )

@@ -72,9 +72,15 @@ the list never denies live traffic while its entries are renumbered, and comes
 out at the end.
 
 Commands the plan adds and then removes are excluded from the comparison, since
-their net effect on the device is nothing. Forgetting the cleanup is still
-rejected — a `permit ip any any` left in a live access list is a hole, and the
-allowance must not become a way to smuggle one through.
+their net effect on the device is nothing. Both spellings of the removal are
+recognised: `no <command>`, which repeats the line, and `no <sequence>`, which
+names only its number — the way an engineer actually deletes an access-list
+entry.
+
+Forgetting the cleanup is still rejected. A `permit ip any any` left in a live
+access list is a hole, and the allowance must not become a way to smuggle one
+through. So is `no 20` for an entry the plan never added, which is a real
+deletion rather than scaffolding.
 
 ## Guardrails
 

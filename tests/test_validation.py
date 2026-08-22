@@ -380,3 +380,38 @@ def test_validator_allows_scaffolding_end_to_end() -> None:
         check_converges(acl, ACL_TRAFFIC_SAFE, parse_plan(acl, ACL_TRAFFIC_SAFE))
         is None
     )
+
+
+ACL_BARE_SEQUENCE = [
+    "ip access-list extended TEST",
+    "  1 permit ip any any",
+    # How an engineer actually deletes an entry: by number, not by repeating
+    # the whole line.
+    "  no 12",
+    "  10 permit ip 10.0.1.0 0.0.0.255 any",
+    "  20 permit ip 10.0.0.0 0.0.0.7 any",
+    "  no 1",
+]
+
+
+def test_scaffolding_removed_by_sequence_number_is_allowed() -> None:
+    """`no 1` pairs with the entry numbered 1, not just a repeat of its text."""
+    assert plan_converges(acl_deps(), ACL_BARE_SEQUENCE)
+
+
+def test_bare_sequence_removal_pairs_with_its_entry() -> None:
+    """A numeric removal matches the entry carrying that number."""
+    found = transient_commands(["  1 permit ip any any", "  no 1"], "no ")
+    assert found == {"1 permit ip any any", "no 1"}
+
+
+def test_removing_a_sequence_the_plan_never_added_is_a_real_change() -> None:
+    """`no 12` deletes existing config; it is not scaffolding."""
+    assert transient_commands(["  no 12"], "no ") == set()
+
+
+def test_bare_sequence_scaffolding_left_behind_is_caught() -> None:
+    """Dropping the `no 1` is still rejected."""
+    without_cleanup = [line for line in ACL_BARE_SEQUENCE if line.strip() != "no 1"]
+    _, unwanted = remaining_difference(acl_deps(), without_cleanup)
+    assert any("1 permit ip any any" in line for line in unwanted)

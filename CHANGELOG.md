@@ -20,8 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mid-change; the plan is parsed into a tree before comparison, which loses
   command order, so both halves of that pair looked like configuration left
   behind and every traffic-safe plan was rejected. Scaffolding the plan itself
-  removes is now excluded from the comparison. Forgetting the cleanup is still
-  caught, so a `permit ip any any` cannot be smuggled into a live access list.
+  removes is now excluded from the comparison, whether the removal repeats the
+  command or names only its sequence number (`no 1`). Forgetting the cleanup is
+  still caught, so a `permit ip any any` cannot be smuggled into a live access
+  list, and removing a sequence the plan never added still counts as a real
+  deletion.
 - `examples/acl_resequencing.py` and `examples/ollama_quickstart.py`, both
   runnable.
 
