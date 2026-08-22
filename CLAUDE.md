@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-hier-config-ai extends [hier-config](https://github.com/netdevops/hier-config) with LLM-driven network configuration remediation, built on [PydanticAI](https://ai.pydantic.dev/). It targets the config sections hier-config cannot resolve deterministically — access-list resequencing being the canonical case. Python 3.10+, managed with Poetry.
+hier-config-ai extends [hier-config](https://github.com/netdevops/hier-config) with LLM-driven network configuration remediation, built on [PydanticAI](https://ai.pydantic.dev/). It targets the config sections hier-config cannot resolve deterministically. Access-list resequencing is the canonical case and the documented flagship: `examples/acl_resequencing.py` and `docs/user-guide/custom-workflows.md` put it against the hand-written workflow from hier-config's own guide. Python 3.10+, managed with Poetry.
 
 The distinguishing feature is that plans are **verified, not trusted**: every plan is applied with `HConfig.future` and re-checked, and failures go back to the model through `ModelRetry`.
 

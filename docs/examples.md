@@ -2,8 +2,10 @@
 
 ## Access list resequencing
 
-The case hier-config cannot resolve on its own. The existing entry has to move
-from sequence 12 to 20 so a new entry can take 10.
+The case hier-config cannot resolve on its own, and the one its
+[custom workflows guide](https://hier-config.readthedocs.io/en/latest/user/custom-workflows/)
+solves with hand-written Python. Runnable as
+`examples/acl_resequencing.py`.
 
 ```python
 import asyncio
@@ -33,18 +35,24 @@ workflow.set_model("anthropic:claude-sonnet-4-5")
 workflow.add_rule(
     AIRemediationRule(
         description=(
-            "Rewrite the access list so its entries end up in the intended "
-            "order with the intended sequence numbers. Remove entries that are "
-            "no longer wanted before adding their replacements."
+            "Rewrite the access list so its entries end up with the intended "
+            "sequence numbers.\n"
+            "An entry cannot be renumbered in place. Delete it by number with "
+            "'no <seq>', then add it back at its new number.\n"
+            "The list must never deny live traffic while it is being "
+            "rewritten. Add '1 permit ip any any' as the first command, and "
+            "remove it with 'no 1' as the last."
         ),
         lineage=(MatchRule(startswith="ip access-list"),),
         example=AIRemediationExample(
-            running_config="ip access-list extended EXAMPLE\n 20 permit ip any any",
+            running_config="ip access-list extended EXAMPLE\n 15 permit ip any any",
             remediation_config=(
                 "ip access-list extended EXAMPLE\n"
-                " no 20 permit ip any any\n"
-                " 10 permit ip 192.0.2.0 0.0.0.255 any\n"
-                " 20 permit ip any any"
+                "  1 permit ip any any\n"
+                "  no 15\n"
+                "  10 permit ip 192.0.2.0 0.0.0.255 any\n"
+                "  20 permit ip any any\n"
+                "  no 1"
             ),
         ),
     )
@@ -52,6 +60,48 @@ workflow.add_rule(
 
 print("\n".join(asyncio.run(workflow.aai_remediation_config()).to_lines()))
 ```
+
+```
+ip access-list extended TEST
+  1 permit ip any any
+  no 12
+  10 permit ip 10.0.1.0 0.0.0.255 any
+  20 permit ip 10.0.0.0 0.0.0.7 any
+  no 1
+```
+
+The temporary allow-all keeps the list from denying traffic while its entries
+are renumbered. It and its `no 1` are recognised as a pair whose net effect is
+nothing; forgetting the cleanup would be rejected.
+
+!!! note "State ordering constraints explicitly"
+    Without the traffic-safety sentence in `description`, the model returns the
+    same plan hier-config generates and validation accepts it — the end state is
+    identical. Convergence proves the end state, not that the path was safe.
+
+## Running it on a laptop
+
+The same rule against a local model. `output_mode="native"` and a temperature of
+zero are what make a small model usable; see
+[Models and Agents](user-guide/models.md).
+
+```python
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+model = OpenAIChatModel(
+    "qwen2.5-coder:7b",
+    provider=OpenAIProvider(base_url="http://localhost:11434/v1", api_key="ollama"),
+)
+workflow.set_model(
+    model,
+    settings={"temperature": 0.0, "timeout": 180.0},
+    output_mode="native",
+)
+```
+
+Verified end to end against `qwen2.5-coder:7b`, which produces the traffic-safe
+plan above. A 3B model manages simpler sections but not this one.
 
 ## Reviewing before applying
 

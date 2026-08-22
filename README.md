@@ -10,12 +10,75 @@ Network configuration remediation driven by a language model, built on
 
 ## What it is for
 
-hier-config already produces correct remediation for most configuration
-differences. Some it cannot: resequencing an access list, for example, needs an
-entry moved from one sequence number to another before a new entry can take its
-place. hier-config has no deterministic rule for that.
+hier-config resolves most configuration differences deterministically. A few it
+cannot, and its
+[custom workflows guide](https://hier-config.readthedocs.io/en/latest/user/custom-workflows/)
+shows how those are handled today: inspect the default remediation, decide it is
+wrong, and build the correct one yourself in Python.
 
-This library sends those sections to a model, then checks the answer.
+This library lets you describe the requirement instead.
+
+## The canonical case
+
+An access list needs a new entry ahead of an existing one, so the existing entry
+must move from sequence 12 to 20. hier-config produces the right end state:
+
+```
+ip access-list extended TEST
+  no 12 permit ip 10.0.0.0 0.0.0.7 any
+  10 permit ip 10.0.1.0 0.0.0.255 any
+  20 permit ip 10.0.0.0 0.0.0.7 any
+```
+
+Between the removal and the re-add, though, the list matches nothing and an
+implicit deny drops live traffic. Avoiding that is what the manual workflow
+exists for — a temporary allow-all, a renumbering loop, a cleanup, written in
+Python and maintained per access list.
+
+Described as a rule instead:
+
+```python
+workflow.add_rule(
+    AIRemediationRule(
+        description=(
+            "Rewrite the access list so its entries end up with the intended "
+            "sequence numbers.\n"
+            "An entry cannot be renumbered in place. Delete it by number with "
+            "'no <seq>', then add it back at its new number.\n"
+            "The list must never deny live traffic while it is being "
+            "rewritten. Add '1 permit ip any any' as the first command, and "
+            "remove it with 'no 1' as the last."
+        ),
+        lineage=(MatchRule(startswith="ip access-list"),),
+        example=AIRemediationExample(
+            running_config="ip access-list extended EXAMPLE\n 15 permit ip any any",
+            remediation_config=(
+                "ip access-list extended EXAMPLE\n"
+                "  1 permit ip any any\n"
+                "  no 15\n"
+                "  10 permit ip 192.0.2.0 0.0.0.255 any\n"
+                "  20 permit ip any any\n"
+                "  no 1"
+            ),
+        ),
+    )
+)
+```
+
+Which produces:
+
+```
+ip access-list extended TEST
+  1 permit ip any any
+  no 12
+  10 permit ip 10.0.1.0 0.0.0.255 any
+  20 permit ip 10.0.0.0 0.0.0.7 any
+  no 1
+```
+
+The rule matches `ip access-list` generally rather than one list by name.
+`examples/acl_resequencing.py` runs this, verified against `qwen2.5-coder:7b` on
+a laptop — it does not need a frontier model.
 
 ## The plan is verified, not trusted
 
@@ -38,6 +101,21 @@ rule -> prompt -> model -> plan
 That loop is the point of the library. A plan that reads well and still leaves
 the device misconfigured is worse than no plan at all.
 
+The scaffolding above is understood: `1 permit ip any any` followed by `no 1` is
+a pair whose net effect is nothing. **Forgetting the cleanup is rejected** — a
+`permit ip any any` left in a live access list is a hole.
+
+## What it does not do for you
+
+**Convergence proves the end state, not the path.** Leave the traffic-safety
+sentence out of the description and the model returns the same unsafe plan
+hier-config generates, which validation accepts because the end state matches.
+Ordering constraints have to be stated. That is prose rather than Python, but it
+is not inferred.
+
+**Only send what needs judgment.** Deterministic remediation is correct for most
+configuration, and it is free, instant, and never wrong.
+
 ## Install
 
 ```bash
@@ -48,6 +126,8 @@ Ollama, Azure OpenAI, and OpenRouter speak the OpenAI-compatible API, so they
 use the `openai` extra.
 
 ## Use
+
+The rule above, with the surrounding scaffolding:
 
 ```python
 import asyncio
@@ -66,31 +146,15 @@ intended = HConfig.from_text(Platform.CISCO_IOS, open("intended.conf").read())
 
 workflow = AIWorkflowRemediation(running, intended)
 workflow.set_model("anthropic:claude-sonnet-4-5")
-workflow.add_rule(
-    AIRemediationRule(
-        description=(
-            "Rewrite the access list so its entries end up in the intended "
-            "order with the intended sequence numbers."
-        ),
-        lineage=(MatchRule(startswith="ip access-list"),),
-        example=AIRemediationExample(
-            running_config="ip access-list extended EXAMPLE\n 20 permit ip any any",
-            remediation_config=(
-                "ip access-list extended EXAMPLE\n"
-                " no 20 permit ip any any\n"
-                " 10 permit ip 192.0.2.0 0.0.0.255 any\n"
-                " 20 permit ip any any"
-            ),
-        ),
-    )
-)
+workflow.add_rule(acl_resequencing_rule)   # as defined above
 
 remediation = asyncio.run(workflow.aai_remediation_config())
 print("\n".join(remediation.to_lines()))
 ```
 
-`ai_remediation_config()` is available for synchronous callers. Rules run
-concurrently, so a device with several rules costs one round trip, not several.
+Add one rule per section that needs judgment. Rules run concurrently, so a
+device with several of them costs one round trip rather than several.
+`aai_remediation_config()` is the async form.
 
 ## Reviewing a plan before you apply it
 

@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deletion.
 - `examples/acl_resequencing.py` and `examples/ollama_quickstart.py`, both
   runnable.
+- "Replacing a Custom Workflow" documentation, putting access-list resequencing
+  against the hand-written version from hier-config's custom workflows guide.
+  The README, home page, quick start, and examples now lead with that case
+  rather than a toy interface change.
 
 ## [0.2.1a0] - 2026-08-21
 

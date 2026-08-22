@@ -1,19 +1,26 @@
-"""Run hier-config-ai against a local Ollama model.
+"""Resequence an access list by describing the rule, not by coding it.
 
-    ollama pull llama3.2:3b
-    poetry run python examples/ollama_quickstart.py llama3.2:3b
+hier-config's custom-workflows guide handles this by hand: build an HConfig,
+insert a temporary `1 permit ip any any`, walk the default remediation rounding
+each `no <seq>` to a new number, then `no 1` to clean up. That is real code to
+write, test, and maintain for every edge case of this shape.
 
-Two settings decide whether a small local model works at all.
-`output_mode="native"`, because these models are unreliable at tool
-calling and the default mode asks for structured output through one. And
-`temperature: 0.0`, because Ollama defaults to 0.8, at which the same
-prompt succeeds on one run and fails the next.
+Here the same requirement is written as a rule description. The model proposes
+the commands, and the plan is applied and re-diffed before it is returned, so a
+plan that does not produce the intended access list is rejected rather than
+handed back.
+
+    poetry run python examples/acl_resequencing.py qwen2.5-coder:7b
+
+Use a capable model. Resequencing needs the model to work out that an entry
+cannot be renumbered in place; small local models often cannot, and will
+exhaust their retries instead of returning something wrong.
 """
 
 import asyncio
 import sys
 
-from hier_config import HConfig, Platform
+from hier_config import HConfig, Platform, WorkflowRemediation
 from hier_config.models import MatchRule
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -22,13 +29,10 @@ from hier_config_ai import (
     AIRemediationExample,
     AIRemediationRule,
     AIWorkflowRemediation,
-    build_agent,
 )
 
-MODEL_NAME = sys.argv[1] if len(sys.argv) > 1 else "llama3.2:3b"
+MODEL_NAME = sys.argv[1] if len(sys.argv) > 1 else "qwen2.5-coder:7b"
 
-# Ollama speaks the OpenAI-compatible API, so it goes through OpenAIChatModel.
-# The api_key is a required placeholder; Ollama ignores it.
 model = OpenAIChatModel(
     MODEL_NAME,
     provider=OpenAIProvider(base_url="http://localhost:11434/v1", api_key="ollama"),
@@ -36,69 +40,76 @@ model = OpenAIChatModel(
 
 running = HConfig.from_text(
     Platform.CISCO_IOS,
-    "ip access-list extended TEST\n  12 permit ip 10.0.0.0 0.0.0.7 any",
+    "ip access-list extended TEST\n 12 permit ip 10.0.0.0 0.0.0.7 any\n",
 )
 intended = HConfig.from_text(
     Platform.CISCO_IOS,
-    "ip access-list extended TEST\n  10 permit ip 10.0.1.0 0.0.0.255 any\n  20 permit ip 10.0.0.0 0.0.0.7 any",
+    "ip access-list extended TEST\n"
+    " 10 permit ip 10.0.1.0 0.0.0.255 any\n"
+    " 20 permit ip 10.0.0.0 0.0.0.7 any\n",
+)
+
+# Everything the custom workflow encodes in Python is stated here instead.
+#
+# `ip access-list resequence` is deliberately not mentioned. It renumbers every
+# entry by a fixed stride, which cannot produce this target: 12 has to become
+# 20 while a new 10 is inserted ahead of it. Naming a command the task cannot
+# use only invites the model to reach for it.
+RULE = AIRemediationRule(
+    description=(
+        "Rewrite the access list so its entries end up with the intended "
+        "sequence numbers.\n"
+        "An entry cannot be renumbered in place. Delete it by number with "
+        "'no <seq>', then add it back at its new number.\n"
+        "The list must never deny live traffic while it is being rewritten. "
+        "Add '1 permit ip any any' as the first command, and remove it with "
+        "'no 1' as the last."
+    ),
+    lineage=(MatchRule(startswith="ip access-list"),),
+    # One access list throughout: the example is few-shot input, so anything
+    # incoherent in it is something the model is being taught to copy.
+    example=AIRemediationExample(
+        running_config="ip access-list extended EXAMPLE\n 15 permit ip any any",
+        remediation_config=(
+            "ip access-list extended EXAMPLE\n"
+            "  1 permit ip any any\n"
+            "  no 15\n"
+            "  10 permit ip 192.0.2.0 0.0.0.255 any\n"
+            "  20 permit ip any any\n"
+            "  no 1"
+        ),
+    ),
 )
 
 workflow = AIWorkflowRemediation(running, intended)
-workflow.set_agent(
-    build_agent(
-        model,
-        driver=running.driver,
-        settings={"temperature": 0.0},
-        output_mode="native",
-    )
+workflow.set_model(
+    model,
+    settings={"temperature": 0.0, "timeout": 180.0},
+    output_mode="native",
 )
-workflow.add_rule(
-    AIRemediationRule(
-        description=(
-            "Bring the access-list into line with the intended configuration: "
-            "- Use the `ip access-list resequence` command to resequence the sequence numbers"
-            "- Enable all traffice with `permit ip any any` with sequence 1"
-            "- At the end, remove sequence number 1"
-        ),
-        lineage=(MatchRule(startswith="ip access-list"),),
-        example=AIRemediationExample(
-            running_config=(
-                "ip access-list extended TEST\n  14 permit ip 10.0.0.0 0.0.0.7 any"
-            ),
-            remediation_config=(
-                "ip access-list resequence TEST 10 10\n"
-                "ip access-list extended TEST\n"
-                "  1 permit ip any any\n"
-                "  no 10\n"
-                "  10 permit ip 10.0.2.0 0.0.0.255 any\n"
-                "  20 permit ip 10.0.1.0 0.0.0.7 any\n"
-                "  no 1"
-            ),
-        ),
-    )
-)
+workflow.add_rule(RULE)
 
 
 async def main() -> None:
-    """Generate a remediation plan and report the result."""
-    print(f"model: {MODEL_NAME}")
-    print(f"running:  {list(running.to_lines())}")
-    print(f"intended: {list(intended.to_lines())}\n")
+    """Show the deterministic remediation, then the model's."""
+    deterministic = WorkflowRemediation(running, intended).remediation_config
+    print("hier-config on its own:")
+    for line in deterministic.to_lines():
+        print(f"   {line}")
+    print("   ^ correct end state, but it denies traffic between the removal")
+    print("     and the re-add, which is why the custom workflow exists.\n")
+
     try:
         remediation = await workflow.aai_remediation_config()
-    # An example should report any failure plainly rather than traceback.
+    # An example should report a failure plainly rather than traceback.
     except Exception as exc:  # ruff: ignore[blind-except]  # pylint: disable=broad-exception-caught
         print(f"FAILED: {type(exc).__name__}: {exc}")
+        print("Try a more capable model; this task defeats small ones.")
         return
 
-    print("PLAN (validated -- it provably converges):")
+    print(f"hier-config-ai with {MODEL_NAME} (validated to converge):")
     for line in remediation.to_lines():
         print(f"   {line}")
-    for usage in workflow.usage:
-        print(
-            f"\ntokens: in={usage.input_tokens} out={usage.output_tokens} "
-            f"requests={usage.requests}"
-        )
 
 
 asyncio.run(main())

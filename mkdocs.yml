@@ -60,6 +60,7 @@ nav:
       - Installation: installation.md
       - Quick Start: quickstart.md
   - User Guide:
+      - Replacing a Custom Workflow: user-guide/custom-workflows.md
       - Models and Agents: user-guide/models.md
       - Validation and Guardrails: user-guide/validation.md
       - Prompt Templates: user-guide/prompt-templates.md
