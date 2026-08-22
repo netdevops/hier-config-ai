@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .models import GPTRemediationContext
+    from .models import AIRemediationContext
 
 _REQUIRED_PLACEHOLDERS = (
     "{running_config}",
@@ -24,53 +24,42 @@ class PromptTemplate:
     the necessary context for plan generation.
     """
 
-    DEFAULT_TEMPLATE = """### Network Configuration Remediation Plan Generation
-**Objective**
-Generate a network configuration remediation plan as a JSON object with a **plan** array of string commands to be executed *sequentially* for remediation.
+    # Carries the task and its context only. The output shape is enforced by
+    # the agent's structured output, and the platform's syntax comes from the
+    # driver, so restating either here would contradict the system prompt --
+    # the previous version told the model to reply with raw JSON, which stops
+    # it calling the output tool and burns retries.
+    DEFAULT_TEMPLATE = """### Network configuration remediation
 
-**Current Configuration:**
+**Current configuration**
 ```
 {running_config}
 ```
 
-**Desired Generated Configuration:**
+**Intended configuration**
 ```
 {generated_config}
 ```
 
-**Remediation Rules:**
+**What to achieve**
 {description}
 
-Use the following example as a guide for the format and structure of the commands:
-
-**Example:**
+**Example**
 *running config:*
 ```
 {example_running_config}
 ```
 
-*remediation config:*
+*remediation:*
 ```
 {example_remediation_config}
 ```
 
-**Instructions:**
-- **Respond ONLY with JSON**, no additional narrative. The root object must include a key named "plan" whose value is an array of strings.
-- **Follow the format and structure** demonstrated in the Example context above.
-- **Maintain the command hierarchy** by using indentation (multiples of four spaces) to denote child commands under parent commands.
-- **Each command should be a string** in the list.
-- **Do not include** rollback or validation steps. The list should only contain the commands required to implement the generated configuration.
-
-**Example output format:**
-{{
-    "plan": [
-        "command1",
-        "parent_command",
-        "    child_command1",
-        "    child_command2",
-        "command2"
-    ]
-}}
+**Instructions**
+- Return only the commands that turn the current configuration into the
+  intended one.
+- Follow the structure shown in the example above.
+- Do not include rollback or validation steps.
 """
 
     def __init__(self, template: str | None = None) -> None:
@@ -93,7 +82,7 @@ Use the following example as a guide for the format and structure of the command
                 )
                 raise ValueError(msg)
 
-    def build(self, context: GPTRemediationContext) -> str:
+    def build(self, context: AIRemediationContext) -> str:
         """Build a prompt from the context using this template.
 
         Args:

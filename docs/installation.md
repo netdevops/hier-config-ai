@@ -1,107 +1,57 @@
 # Installation
 
-## Requirements
+## Install
 
-- Python 3.10 or higher
-- pip or poetry package manager
-
-## Basic Installation
-
-The simplest way to install hier-config-gpt is via pip:
+Install with the extra for the provider you use:
 
 ```bash
-pip install hier-config-gpt
+pip install "hier-config-ai[anthropic]"
+pip install "hier-config-ai[openai]"
+pip install "hier-config-ai[google]"
+pip install "hier-config-ai[bedrock]"
+pip install "hier-config-ai[groq]"
+pip install "hier-config-ai[mistral]"
+pip install "hier-config-ai[all]"
 ```
 
-This installs the core library with support for the [hier-config](https://github.com/netdevops/hier-config) framework. However, to use LLM providers, you'll need to install additional dependencies.
-
-## Installing with LLM Providers
-
-Since different users may want to use different LLM providers, the library offers optional dependencies for each supported provider.
-
-### OpenAI GPT Models
-
-To use OpenAI's GPT models (GPT-4, GPT-4o, etc.):
+Ollama, Azure OpenAI, and OpenRouter all speak the OpenAI-compatible API, so
+they are served by the `openai` extra:
 
 ```bash
-pip install hier-config-gpt[openai]
+pip install "hier-config-ai[ollama]"
 ```
 
-### Anthropic Claude Models
+## What comes with the core install
 
-To use Anthropic's Claude models (Claude 3.5 Sonnet, etc.):
+The core package depends only on `pydantic`, `hier-config`, and
+`pydantic-ai-slim`. Provider SDKs are optional, and nothing is imported until
+you name a model, so `import hier_config_ai` works with no provider installed.
+
+!!! note "Extras in 0.1.x installed nothing"
+    Version 0.1.0 declared its extras against optional Poetry *groups*, which
+    are never published. The wheel advertised four extras and required none of
+    them, so `pip install hier-config-gpt[all]` brought in no provider SDK. CI
+    now fails the build if any extra ships without requirements.
+
+## API keys
+
+Set the environment variable your provider expects:
 
 ```bash
-pip install hier-config-gpt[anthropic]
+export ANTHROPIC_API_KEY="..."
+export OPENAI_API_KEY="..."
+export GEMINI_API_KEY="..."
 ```
 
-### Ollama (Self-Hosted Models)
+Never commit keys. See [SECURITY.md](https://github.com/netdevops/hier-config-ai/blob/main/SECURITY.md).
 
-To use Ollama for self-hosted open-source models:
+## Development install
 
 ```bash
-pip install hier-config-gpt[ollama]
+git clone https://github.com/netdevops/hier-config-ai.git
+cd hier-config-ai
+poetry install --with dev,evals --all-extras
+poetry run python scripts/build.py lint-and-test
 ```
 
-### All Providers
-
-To install support for all LLM providers at once:
-
-```bash
-pip install hier-config-gpt[all]
-```
-
-## Installation with Poetry
-
-If you're using Poetry for dependency management:
-
-```bash
-poetry add hier-config-gpt
-```
-
-With optional dependencies:
-
-```bash
-# OpenAI
-poetry add hier-config-gpt[openai]
-
-# Anthropic
-poetry add hier-config-gpt[anthropic]
-
-# Ollama
-poetry add hier-config-gpt[ollama]
-
-# All providers
-poetry add hier-config-gpt[all]
-```
-
-## Installing from Source
-
-To install the latest development version from GitHub:
-
-```bash
-git clone https://github.com/netdevops/hier-config-gpt.git
-cd hier-config-gpt
-pip install -e .
-```
-
-With optional dependencies:
-
-```bash
-pip install -e ".[all]"
-```
-
-## Verifying Installation
-
-After installation, verify that the library is properly installed:
-
-```python
-import hier_config_gpt
-print(hier_config_gpt.__version__)
-```
-
-## Next Steps
-
-- Set up your [LLM client](user-guide/clients.md) with API keys
-- Follow the [Quick Start guide](quickstart.md) for your first implementation
-- Explore [advanced features](user-guide/advanced-features.md) like caching and rate limiting
+Add `--with evals` to run the evaluation harness.

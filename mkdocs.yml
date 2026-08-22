@@ -1,8 +1,8 @@
-site_name: hier-config-gpt
+site_name: hier-config-ai
 site_description: AI-powered network configuration remediation with GPT/LLM integration
-site_url: https://hier-config-gpt.readthedocs.io/
-repo_url: https://github.com/netdevops/hier-config-gpt
-repo_name: netdevops/hier-config-gpt
+site_url: https://hier-config-ai.readthedocs.io/
+repo_url: https://github.com/netdevops/hier-config-ai
+repo_name: netdevops/hier-config-ai
 edit_uri: edit/main/docs/
 
 theme:
@@ -60,9 +60,11 @@ nav:
       - Installation: installation.md
       - Quick Start: quickstart.md
   - User Guide:
-      - LLM Clients: user-guide/clients.md
-      - Advanced Features: user-guide/advanced-features.md
+      - Replacing a Custom Workflow: user-guide/custom-workflows.md
+      - Models and Agents: user-guide/models.md
+      - Validation and Guardrails: user-guide/validation.md
       - Prompt Templates: user-guide/prompt-templates.md
+      - Advanced Features: user-guide/advanced-features.md
   - Examples: examples.md
   - API Reference: api-reference.md
   - Contributing: contributing.md

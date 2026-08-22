@@ -1,167 +1,112 @@
-# Quick Start Guide
+# Quick Start
 
-This guide will help you get started with hier-config-gpt in just a few minutes.
+This walks the case hier-config cannot resolve on its own: resequencing an
+access list without dropping traffic while it is being rewritten.
 
-## Prerequisites
-
-Before you begin, make sure you have:
-
-1. Installed hier-config-gpt with at least one LLM provider (see [Installation](installation.md))
-2. An API key for your chosen LLM provider (OpenAI, Anthropic, or Ollama setup)
-3. Network configuration files to work with
-
-## Basic Workflow
-
-The typical workflow with hier-config-gpt involves:
-
-1. Loading running and desired configurations
-2. Creating a `GPTWorkflowRemediation` instance
-3. Defining remediation rules for edge cases
-4. Setting up an LLM client
-5. Generating the remediation plan
-
-## Your First Example
-
-Let's walk through a complete example that handles ACL (Access Control List) resequencing on Cisco IOS devices.
-
-### Step 1: Import Required Modules
+## The configuration
 
 ```python
-import os
 from hier_config import HConfig, Platform
+
+running = HConfig.from_text(Platform.CISCO_IOS, """
+ip access-list extended TEST
+ 12 permit ip 10.0.0.0 0.0.0.7 any
+""")
+
+intended = HConfig.from_text(Platform.CISCO_IOS, """
+ip access-list extended TEST
+ 10 permit ip 10.0.1.0 0.0.0.255 any
+ 20 permit ip 10.0.0.0 0.0.0.7 any
+""")
+```
+
+The existing entry has to move from 12 to 20 so the new entry can take 10.
+
+## The rule
+
+```python
+import asyncio
+
 from hier_config.models import MatchRule
-from hier_config_gpt import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config_gpt.clients import ChatGPTClient
-```
-
-### Step 2: Load Your Configurations
-
-```python
-# Load your network device configurations
-running_config = open("running_config.conf").read()
-generated_config = open("desired_config.conf").read()
-```
-
-### Step 3: Initialize the Workflow
-
-```python
-# Create the remediation workflow
-wfr = GPTWorkflowRemediation(
-    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
-    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
-)
-```
-
-### Step 4: Define a Remediation Rule
-
-Here's where the AI comes in. Define a rule that describes how to handle complex configuration changes:
-
-```python
-# Describe the remediation process
-description = """When remediating an access-list on Cisco IOS devices:
-1. Resequence the access-list so each sequence number is a multiple of 10
-2. Add a temporary 'permit any' statement at sequence 1
-3. Apply the required changes from the generated configuration
-4. Remove the temporary permit statement
-"""
-
-# Specify which configurations this rule applies to
-lineage = (MatchRule(startswith="ip access-list"),)
-
-# Provide an example for the LLM to learn from
-example = GPTRemediationExample(
-    running_config="ip access-list extended TEST\n  12 permit ip host 10.0.0.1 any",
-    remediation_config="ip access-list resequence TEST 10 10\nip access-list extended TEST\n  1 permit ip any any\n  no 10\n  10 permit ip host 10.0.0.2 any\n  no 1"
+from hier_config_ai import (
+    AIRemediationExample,
+    AIRemediationRule,
+    AIWorkflowRemediation,
 )
 
-# Create the rule
-gpt_rule = GPTRemediationRule(
-    description=description,
-    lineage=lineage,
-    example=example
+workflow = AIWorkflowRemediation(running, intended)
+workflow.set_model("anthropic:claude-sonnet-4-5")
+workflow.add_rule(
+    AIRemediationRule(
+        description=(
+            "Rewrite the access list so its entries end up with the intended "
+            "sequence numbers.\n"
+            "An entry cannot be renumbered in place. Delete it by number with "
+            "'no <seq>', then add it back at its new number.\n"
+            "The list must never deny live traffic while it is being "
+            "rewritten. Add '1 permit ip any any' as the first command, and "
+            "remove it with 'no 1' as the last."
+        ),
+        lineage=(MatchRule(startswith="ip access-list"),),
+        example=AIRemediationExample(
+            running_config="ip access-list extended EXAMPLE\n 15 permit ip any any",
+            remediation_config=(
+                "ip access-list extended EXAMPLE\n"
+                "  1 permit ip any any\n"
+                "  no 15\n"
+                "  10 permit ip 192.0.2.0 0.0.0.255 any\n"
+                "  20 permit ip any any\n"
+                "  no 1"
+            ),
+        ),
+    )
 )
 
-# Add it to the workflow
-wfr.add_gpt_rule(gpt_rule)
+remediation = asyncio.run(workflow.aai_remediation_config())
+print("\n".join(remediation.to_lines()))
 ```
 
-### Step 5: Set Up Your LLM Client
-
-Choose your preferred LLM provider:
-
-=== "OpenAI"
-    ```python
-    client = ChatGPTClient(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        model="gpt-4o"
-    )
-    wfr.set_gpt_client(client)
-    ```
-
-=== "Anthropic Claude"
-    ```python
-    from hier_config_gpt.clients import ClaudeGPTClient
-
-    client = ClaudeGPTClient(
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
-        model="claude-3-5-sonnet-20241022"
-    )
-    wfr.set_gpt_client(client)
-    ```
-
-=== "Ollama"
-    ```python
-    from hier_config_gpt.clients import OllamaGPTClient
-
-    client = OllamaGPTClient(
-        host="http://localhost:11434",
-        model="llama3.2"
-    )
-    wfr.set_gpt_client(client)
-    ```
-
-### Step 6: Generate the Remediation Plan
-
-```python
-# Let the AI generate the remediation commands
-remediation = wfr.gpt_remediation_config()
-print(remediation)
-```
-
-## What Happens Behind the Scenes
-
-1. **Context Building**: The workflow identifies configuration sections matching your lineage rules
-2. **Prompt Construction**: A structured prompt is created with your description, examples, and the actual configs
-3. **LLM Generation**: The LLM analyzes the differences and generates appropriate remediation commands
-4. **Output**: You receive a series of commands that safely transform the running config to match the desired state
-
-## Example Output
-
-For an ACL remediation, you might see output like:
+Output:
 
 ```
-ip access-list resequence TEST 10 10
 ip access-list extended TEST
   1 permit ip any any
-  no 10
-  10 permit ip host 10.0.0.2 any
-  20 permit ip host 10.0.0.3 any
+  no 12
+  10 permit ip 10.0.1.0 0.0.0.255 any
+  20 permit ip 10.0.0.0 0.0.0.7 any
   no 1
 ```
 
-This sequence safely modifies the ACL by:
+`ai_remediation_config()` is available for synchronous callers.
 
-1. Resequencing entries to multiples of 10
-2. Adding a temporary permit to maintain connectivity
-3. Applying the new rules
-4. Removing the temporary permit
+## What happened
 
-## Next Steps
+1. The rule's `lineage` selected the access list in both configurations.
+2. That section became a prompt, built from the rule and the platform's own
+   rules, read from the hier-config driver.
+3. The model answered with a structured plan, not free text.
+4. The plan was applied and re-diffed. Had it not produced the intended access
+   list, the difference would have gone back to the model to correct.
+5. The verified commands came back as an `HConfig`.
 
-Now that you've seen the basics:
+The temporary `1 permit ip any any` and its `no 1` are recognised as a pair
+whose net effect is nothing. Forgetting the cleanup would have been rejected.
 
-- Learn about different [LLM clients](user-guide/clients.md) and their configuration
-- Explore [advanced features](user-guide/advanced-features.md) like caching, rate limiting, and quorum mode
-- Customize [prompt templates](user-guide/prompt-templates.md) for your specific needs
-- Check out more [examples](examples.md) for different use cases
+## Writing a rule
+
+- `description` — what to achieve, as an instruction. **State constraints on
+  ordering here.** Convergence proves the end state, not that the path was safe.
+- `lineage` — `MatchRule`s selecting the section, exactly as in hier-config.
+- `example` — a worked running/remediation pair. This is few-shot input, so keep
+  it internally consistent; see
+  [Prompt Templates](user-guide/prompt-templates.md).
+
+Add one rule per section that needs judgment. Leave everything else to
+hier-config's deterministic remediation, which is free, instant, and correct.
+
+## Next
+
+- [Replacing a Custom Workflow](user-guide/custom-workflows.md) — this case
+  against the hand-written version.
+- [Models and Agents](user-guide/models.md) — including running it on Ollama.
+- [Validation and Guardrails](user-guide/validation.md).

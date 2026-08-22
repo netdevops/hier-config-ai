@@ -1,154 +1,72 @@
-# hier-config-gpt
+# hier-config-ai
 
-**AI-powered network configuration remediation with GPT/LLM integration**
+Network configuration remediation driven by a language model, built on
+[hier-config](https://github.com/netdevops/hier-config) and
+[PydanticAI](https://ai.pydantic.dev/).
 
-[![PyPI version](https://badge.fury.io/py/hier-config-gpt.svg)](https://badge.fury.io/py/hier-config-gpt)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+## What it is for
 
-## Overview
+hier-config resolves most configuration differences deterministically. A few it
+cannot, and its
+[custom workflows guide](https://hier-config.readthedocs.io/en/latest/user/custom-workflows/)
+shows how those are handled today: inspect the default remediation, decide it is
+wrong, and build the correct one yourself in Python.
 
-`hier-config-gpt` extends the powerful [hier-config](https://github.com/netdevops/hier-config) library by adding AI-driven custom remediation workflows. It addresses complex network configuration edge cases that fall outside standard negation and idempotency workflows by leveraging Large Language Models (LLMs) to dynamically generate remediation plans.
+This library lets you describe the requirement instead.
 
-## Key Features
+## The canonical case
 
-- **Multi-Provider LLM Support**: Works with OpenAI GPT, Anthropic Claude, and Ollama (self-hosted) models
-- **Intelligent Remediation**: Automatically generates complex configuration remediation steps
-- **Quorum Mode**: Optional consensus mechanism across multiple LLM providers for increased reliability
-- **Response Caching**: Built-in caching to reduce API costs and improve performance
-- **Rate Limiting**: Token bucket algorithm to prevent API throttling
-- **Configurable Prompts**: Customize prompt templates for your specific needs
-- **Production Ready**: Comprehensive error handling, retry logic, and logging
+An access list needs a new entry ahead of an existing one, so the existing entry
+must move from sequence 12 to 20. hier-config produces the right end state:
 
-## Quick Example
-
-```python
-import os
-from hier_config import HConfig, Platform
-from hier_config.models import MatchRule
-from hier_config_gpt import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config_gpt.clients import ChatGPTClient
-
-# Load configurations
-running_config = HConfig.from_text(Platform.CISCO_IOS, open("running.conf").read())
-generated_config = HConfig.from_text(Platform.CISCO_IOS, open("desired.conf").read())
-
-# Initialize workflow
-wfr = GPTWorkflowRemediation(
-    running_config=running_config,
-    generated_config=generated_config
-)
-
-# Define remediation rule
-description = """When remediating an access-list on Cisco IOS devices:
-1. Resequence the access-list so each sequence number is a multiple of 10
-2. Add a temporary 'permit any' statement at sequence 1
-3. Apply the required changes from the generated configuration
-4. Remove the temporary permit statement
-"""
-
-lineage = (MatchRule(startswith="ip access-list"),)
-example = GPTRemediationExample(
-    running_config="ip access-list extended TEST\n  12 permit ip host 10.0.0.1 any",
-    remediation_config="ip access-list resequence TEST 10 10\nip access-list extended TEST\n  1 permit ip any any\n  no 10\n  10 permit ip host 10.0.0.2 any\n  no 1"
-)
-
-gpt_rule = GPTRemediationRule(
-    description=description,
-    lineage=lineage,
-    example=example
-)
-
-# Add rule and set up client
-wfr.add_gpt_rule(gpt_rule)
-client = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
-wfr.set_gpt_client(client)
-
-# Generate remediation plan
-remediation = wfr.gpt_remediation_config()
-print(remediation)
+```
+ip access-list extended TEST
+  no 12 permit ip 10.0.0.0 0.0.0.7 any
+  10 permit ip 10.0.1.0 0.0.0.255 any
+  20 permit ip 10.0.0.0 0.0.0.7 any
 ```
 
-## Use Cases
+But between the removal and the re-add the list matches nothing, and an implicit
+deny drops live traffic. Avoiding that is what the manual workflow exists for —
+a temporary allow-all, a renumbering loop, a cleanup.
 
-hier-config-gpt is perfect for scenarios where standard configuration remediation isn't sufficient:
+Stated as a rule instead, the same requirement produces:
 
-- **Access List Resequencing**: Automatically handle complex ACL resequencing with temporary permit statements
-- **Interface Configuration**: Generate safe interface configuration changes with proper ordering
-- **Routing Protocol Updates**: Handle complex routing protocol transitions
-- **VLAN Reconfiguration**: Manage VLAN changes across multiple switches
-- **QoS Policy Updates**: Coordinate policy-map and class-map changes
+```
+ip access-list extended TEST
+  1 permit ip any any
+  no 12
+  10 permit ip 10.0.1.0 0.0.0.255 any
+  20 permit ip 10.0.0.0 0.0.0.7 any
+  no 1
+```
 
-## Why Use hier-config-gpt?
+[Replacing a Custom Workflow](user-guide/custom-workflows.md) walks it in full.
 
-Network configuration remediation often requires more than simple diffs and negations. Some scenarios demand:
+## The plan is verified, not trusted
 
-- Specific command ordering to maintain connectivity
-- Temporary configurations to prevent service disruption
-- Complex multi-step procedures
-- Context-aware decision making
+The model's plan is applied to the running configuration with `HConfig.future`
+and re-checked against the intended one. If it does not converge, the remaining
+difference goes back to the model and it corrects its own work.
 
-Traditional automation handles the straightforward cases. hier-config-gpt handles everything else by leveraging AI to understand context and generate intelligent remediation plans.
+A plan that reads well and still leaves the device misconfigured is worse than
+no plan at all, so nothing is returned until it provably reaches the target.
 
-## Getting Started
+## Where to start
 
-1. **[Install](installation.md)** hier-config-gpt with your preferred LLM provider
-2. **[Follow the Quick Start](quickstart.md)** guide for your first implementation
-3. **[Explore Examples](examples.md)** for real-world use cases
-4. **[Configure Advanced Features](user-guide/advanced-features.md)** like caching and rate limiting
-
-## Supported LLM Providers
-
-| Provider | Best For | Cost | Deployment |
-|----------|----------|------|------------|
-| **OpenAI** | Production use, high accuracy | Pay per use | Cloud API |
-| **Anthropic** | Complex reasoning, safety | Pay per use | Cloud API |
-| **Ollama** | Privacy, no API costs | Free | Self-hosted |
-
-## Documentation Navigation
-
-<div class="grid cards" markdown>
-
-- **Getting Started**
-  - [Installation](installation.md)
-  - [Quick Start](quickstart.md)
-
-- **User Guide**
-  - [LLM Clients](user-guide/clients.md)
-  - [Advanced Features](user-guide/advanced-features.md)
-  - [Prompt Templates](user-guide/prompt-templates.md)
-
-- **Reference**
-  - [Examples](examples.md)
-  - [API Reference](api-reference.md)
-
-- **Community**
-  - [Contributing](contributing.md)
-  - [Changelog](changelog.md)
-
-</div>
+- [Installation](installation.md) — pick the extra for your provider.
+- [Quick Start](quickstart.md) — the access-list workflow, end to end.
+- [Replacing a Custom Workflow](user-guide/custom-workflows.md) — the manual
+  approach and this one, side by side.
+- [Models and Agents](user-guide/models.md) — choosing a model, including self-hosted.
+- [Validation and Guardrails](user-guide/validation.md) — how plans are checked.
+- [Prompt Templates](user-guide/prompt-templates.md) — writing rules well.
+- [Advanced Features](user-guide/advanced-features.md) — caching, rate limiting,
+  failover, consensus, evaluation.
+- [API Reference](api-reference.md).
 
 ## Requirements
 
-- Python 3.10 or higher
-- hier-config 3.2.0 or higher
-- At least one LLM provider:
-  - OpenAI API key (for GPT models)
-  - Anthropic API key (for Claude models)
-  - Ollama installation (for self-hosted models)
-
-## Community & Support
-
-- **Issues**: [GitHub Issues](https://github.com/netdevops/hier-config-gpt/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/netdevops/hier-config-gpt/discussions)
-- **Source Code**: [GitHub Repository](https://github.com/netdevops/hier-config-gpt)
-
-## License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](https://github.com/netdevops/hier-config-gpt/blob/main/LICENSE) file for details.
-
-## Credits
-
-- Built on top of [hier-config](https://github.com/netdevops/hier-config) by James Williams
-- Supports [OpenAI GPT](https://openai.com/), [Anthropic Claude](https://www.anthropic.com/), and [Ollama](https://ollama.ai/)
+- Python 3.10 or later
+- hier-config 4.0.0b1 or later
+- An API key for your chosen provider, or a self-hosted model

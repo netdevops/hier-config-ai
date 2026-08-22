@@ -1,14 +1,14 @@
-# Contributing to hier-config-gpt
+# Contributing to hier-config-ai
 
-Thank you for your interest in contributing to hier-config-gpt! We welcome contributions from the community.
+Thank you for your interest in contributing to hier-config-ai! We welcome contributions from the community.
 
 ## Getting Started
 
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/hier-config-gpt.git
-   cd hier-config-gpt
+   git clone https://github.com/YOUR_USERNAME/hier-config-ai.git
+   cd hier-config-ai
    ```
 
 3. **Install dependencies** using Poetry:
@@ -17,7 +17,7 @@ Thank you for your interest in contributing to hier-config-gpt! We welcome contr
    curl -sSL https://install.python-poetry.org | python3 -
 
    # Install project dependencies
-   poetry install --with dev,chatgpt,anthropic,ollama
+   poetry install --with dev,evals --all-extras
    ```
 
 4. **Create a branch** for your changes:
@@ -179,7 +179,7 @@ When reporting issues, please include:
 4. **Actual behavior**: What actually happened
 5. **Environment**:
    - Python version
-   - hier-config-gpt version
+   - hier-config-ai version
    - OS and version
    - Relevant dependencies
 6. **Code samples**: Minimal code to reproduce the issue
@@ -227,6 +227,6 @@ If you have questions about contributing, please:
 
 ## License
 
-By contributing to hier-config-gpt, you agree that your contributions will be licensed under the Apache License 2.0.
+By contributing to hier-config-ai, you agree that your contributions will be licensed under the Apache License 2.0.
 
 Thank you for contributing! 🎉

@@ -1,439 +1,212 @@
 # Examples
 
-This page provides real-world examples of using hier-config-gpt for various network configuration scenarios.
+## Access list resequencing
 
-## Example 1: ACL Resequencing
-
-One of the most common use cases is safely resequencing Access Control Lists (ACLs) on Cisco devices.
-
-### Problem
-
-When modifying ACLs, you need to:
-1. Resequence entries to maintain consistent numbering
-2. Avoid blocking all traffic during the change
-3. Apply new rules correctly
-4. Remove temporary rules
-
-### Solution
+The case hier-config cannot resolve on its own, and the one its
+[custom workflows guide](https://hier-config.readthedocs.io/en/latest/user/custom-workflows/)
+solves with hand-written Python. `examples/ollama_acl.py` runs it against a
+local Ollama model.
 
 ```python
-import os
+import asyncio
+
 from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
-from hier_config_gpt import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config_gpt.clients import ChatGPTClient
 
-# Sample configurations
-running_config = """
-ip access-list extended PRODUCTION-ACL
-  12 permit tcp host 10.0.0.1 host 192.168.1.1 eq 443
-  15 permit tcp host 10.0.0.2 host 192.168.1.1 eq 443
-  27 permit tcp host 10.0.0.3 host 192.168.1.1 eq 443
-"""
-
-generated_config = """
-ip access-list extended PRODUCTION-ACL
-  10 permit tcp host 10.0.0.1 host 192.168.1.1 eq 443
-  20 permit tcp host 10.0.0.4 host 192.168.1.1 eq 443
-  30 permit tcp host 10.0.0.3 host 192.168.1.1 eq 443
-"""
-
-# Initialize workflow
-wfr = GPTWorkflowRemediation(
-    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
-    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
+from hier_config_ai import (
+    AIRemediationExample,
+    AIRemediationRule,
+    AIWorkflowRemediation,
 )
 
-# Define remediation rule
-description = """
-When remediating an access-list on Cisco IOS:
-1. Resequence the ACL so each sequence number is a multiple of 10
-2. Add a temporary 'permit ip any any' at sequence 1 to maintain connectivity
-3. Remove old entries (using new sequence numbers after resequencing)
-4. Add new entries
-5. Remove the temporary permit
-"""
+running = HConfig.from_text(Platform.CISCO_IOS, """
+ip access-list extended TEST
+ 12 permit ip 10.0.0.0 0.0.0.7 any
+""")
 
-lineage = (MatchRule(startswith="ip access-list"),)
+intended = HConfig.from_text(Platform.CISCO_IOS, """
+ip access-list extended TEST
+ 10 permit ip 10.0.1.0 0.0.0.255 any
+ 20 permit ip 10.0.0.0 0.0.0.7 any
+""")
 
-example = GPTRemediationExample(
-    running_config="ip access-list extended TEST\n  12 permit ip host 10.0.0.1 any",
-    remediation_config="""ip access-list resequence TEST 10 10
+workflow = AIWorkflowRemediation(running, intended)
+workflow.set_model("anthropic:claude-sonnet-4-5")
+workflow.add_rule(
+    AIRemediationRule(
+        description=(
+            "Rewrite the access list so its entries end up with the intended "
+            "sequence numbers.\n"
+            "An entry cannot be renumbered in place. Delete it by number with "
+            "'no <seq>', then add it back at its new number.\n"
+            "The list must never deny live traffic while it is being "
+            "rewritten. Add '1 permit ip any any' as the first command, and "
+            "remove it with 'no 1' as the last."
+        ),
+        lineage=(MatchRule(startswith="ip access-list"),),
+        example=AIRemediationExample(
+            running_config="ip access-list extended EXAMPLE\n 15 permit ip any any",
+            remediation_config=(
+                "ip access-list extended EXAMPLE\n"
+                "  1 permit ip any any\n"
+                "  no 15\n"
+                "  10 permit ip 192.0.2.0 0.0.0.255 any\n"
+                "  20 permit ip any any\n"
+                "  no 1"
+            ),
+        ),
+    )
+)
+
+print("\n".join(asyncio.run(workflow.aai_remediation_config()).to_lines()))
+```
+
+```
 ip access-list extended TEST
   1 permit ip any any
-  no 10
-  10 permit ip host 10.0.0.2 any
-  no 1"""
-)
-
-gpt_rule = GPTRemediationRule(
-    description=description,
-    lineage=lineage,
-    example=example
-)
-
-wfr.add_gpt_rule(gpt_rule)
-
-# Set up client
-client = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
-wfr.set_gpt_client(client)
-
-# Generate remediation
-remediation = wfr.gpt_remediation_config()
-print(remediation)
-```
-
-### Expected Output
-
-```
-ip access-list resequence PRODUCTION-ACL 10 10
-ip access-list extended PRODUCTION-ACL
-  1 permit ip any any
-  no 10
-  no 20
-  no 30
-  10 permit tcp host 10.0.0.1 host 192.168.1.1 eq 443
-  20 permit tcp host 10.0.0.4 host 192.168.1.1 eq 443
-  30 permit tcp host 10.0.0.3 host 192.168.1.1 eq 443
+  no 12
+  10 permit ip 10.0.1.0 0.0.0.255 any
+  20 permit ip 10.0.0.0 0.0.0.7 any
   no 1
 ```
 
-## Example 2: Interface Configuration with Safety
+The temporary allow-all keeps the list from denying traffic while its entries
+are renumbered. It and its `no 1` are recognised as a pair whose net effect is
+nothing; forgetting the cleanup would be rejected.
 
-Safely modify interface configurations with proper shutdown/no shutdown sequences.
+!!! note "State ordering constraints explicitly"
+    Without the traffic-safety sentence in `description`, the model returns the
+    same plan hier-config generates and validation accepts it — the end state is
+    identical. Convergence proves the end state, not that the path was safe.
 
-### Problem
+## Running it on a laptop
 
-When making significant interface changes, you need to:
-- Shut down the interface first
-- Apply all changes
-- Bring the interface back up
-- Ensure changes are atomic
-
-### Solution
+The same rule against a local model. `output_mode="native"` and a temperature of
+zero are what make a small model usable; see
+[Models and Agents](user-guide/models.md).
 
 ```python
-from hier_config import HConfig, Platform
-from hier_config.models import MatchRule
-from hier_config_gpt import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config_gpt.clients import ClaudeGPTClient
+from pydantic_ai.models.ollama import OllamaModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
-running_config = """
-interface GigabitEthernet0/1
-  description Old Description
-  ip address 10.0.0.1 255.255.255.0
-  no shutdown
-"""
-
-generated_config = """
-interface GigabitEthernet0/1
-  description New Production Interface
-  ip address 10.0.1.1 255.255.255.0
-  speed 1000
-  duplex full
-  no shutdown
-"""
-
-wfr = GPTWorkflowRemediation(
-    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
-    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
+model = OllamaModel(
+    "qwen2.5-coder:7b",
+    provider=OllamaProvider(base_url="http://localhost:11434/v1"),
 )
-
-description = """
-When changing interface IP address:
-1. Shut down the interface
-2. Apply new configuration
-3. Bring the interface back up
-This prevents routing issues during the change.
-"""
-
-lineage = (MatchRule(startswith="interface"),)
-
-example = GPTRemediationExample(
-    running_config="interface Gi0/1\n  ip address 1.1.1.1 255.255.255.0\n  no shutdown",
-    remediation_config="interface Gi0/1\n  shutdown\n  ip address 2.2.2.2 255.255.255.0\n  no shutdown"
+workflow.set_model(
+    model,
+    settings={"temperature": 0.0, "timeout": 180.0},
+    output_mode="native",
 )
-
-gpt_rule = GPTRemediationRule(description=description, lineage=lineage, example=example)
-wfr.add_gpt_rule(gpt_rule)
-
-client = ClaudeGPTClient(api_key=os.getenv("ANTHROPIC_API_KEY"))
-wfr.set_gpt_client(client)
-
-remediation = wfr.gpt_remediation_config()
-print(remediation)
 ```
 
-## Example 3: Multi-Provider Quorum for Critical Changes
+Verified end to end against `qwen2.5-coder:7b`, which produces the traffic-safe
+plan above. A 3B model manages simpler sections but not this one.
 
-Use multiple LLM providers with consensus for high-stakes configuration changes.
-
-### Problem
-
-For critical infrastructure, you want multiple AI models to agree on the remediation plan before applying changes.
-
-### Solution
+## Reviewing before applying
 
 ```python
-from hier_config import HConfig, Platform
-from hier_config.models import MatchRule
-from hier_config_gpt import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config_gpt.clients import (
-    ChatGPTClient,
-    ClaudeGPTClient,
-    OllamaGPTClient,
-    MultiProviderGPTClient
-)
+from hier_config_ai import build_agent
+from hier_config_ai.deps import RemediationDeps
 
-# Production routing configuration
-running_config = """
-router bgp 65001
-  neighbor 10.0.0.1 remote-as 65002
-  neighbor 10.0.0.1 description OLD-PEER
-"""
+agent = build_agent("anthropic:claude-sonnet-4-5", driver=running.driver)
+result = await agent.run(prompt, deps=RemediationDeps(running, intended))
+plan = result.output
 
-generated_config = """
-router bgp 65001
-  neighbor 10.0.0.2 remote-as 65002
-  neighbor 10.0.0.2 description NEW-PEER
-"""
+print(plan.reasoning)
+print(f"confidence: {plan.confidence}")
 
-wfr = GPTWorkflowRemediation(
-    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
-    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
-)
+if plan.commands_requiring_review:
+    print("Review before applying:")
+    for command in plan.commands_requiring_review:
+        print(" ", command)
 
-description = """
-When changing BGP neighbors:
-1. Configure new neighbor first
-2. Wait for BGP to establish
-3. Remove old neighbor
-This ensures no routing blackhole.
-"""
-
-lineage = (MatchRule(startswith="router bgp"),)
-example = GPTRemediationExample(
-    running_config="router bgp 65001\n  neighbor 1.1.1.1 remote-as 65002",
-    remediation_config="router bgp 65001\n  neighbor 2.2.2.2 remote-as 65002\n  no neighbor 1.1.1.1"
-)
-
-gpt_rule = GPTRemediationRule(description=description, lineage=lineage, example=example)
-wfr.add_gpt_rule(gpt_rule)
-
-# Set up multiple providers
-openai = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"))
-claude = ClaudeGPTClient(api_key=os.getenv("ANTHROPIC_API_KEY"))
-ollama = OllamaGPTClient(model="llama3.2")
-
-# Require majority consensus
-client = MultiProviderGPTClient(
-    providers=[openai, claude, ollama],
-    enable_quorum=True
-)
-
-wfr.set_gpt_client(client)
-remediation = wfr.gpt_remediation_config()
-print(remediation)
+if plan.confidence == "low":
+    raise SystemExit("Low confidence. Have an engineer check this.")
 ```
 
-## Example 4: Using Caching and Rate Limiting
+## Several rules on one device
 
-Optimize API usage with caching and rate limiting for production environments.
-
-### Problem
-
-You're processing hundreds of device configurations and want to:
-- Reduce API costs through caching
-- Avoid rate limit throttling
-- Maintain good performance
-
-### Solution
+Rules run concurrently, so this costs one round trip, not three.
 
 ```python
-from hier_config import HConfig, Platform
-from hier_config.models import MatchRule
-from hier_config_gpt import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config_gpt.clients import (
-    ChatGPTClient,
-    CachedGPTClient,
-    RateLimitedGPTClient,
-    ResponseCache
-)
+workflow.add_rule(acl_rule)
+workflow.add_rule(vlan_rule)
+workflow.add_rule(interface_rule)
 
-# Create optimized client
-base = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o-mini")
-cached = CachedGPTClient(base, cache=ResponseCache(ttl_seconds=3600))
-client = RateLimitedGPTClient(cached, max_requests=50, time_window_seconds=60.0)
+remediation = await workflow.aai_remediation_config()
 
-# Process multiple devices
-devices = ["router1.conf", "router2.conf", "router3.conf"]
+for usage in workflow.usage:
+    print(usage.input_tokens, usage.output_tokens)
+```
 
-for device_file in devices:
-    running = open(f"running/{device_file}").read()
-    generated = open(f"generated/{device_file}").read()
+## Many devices at once
 
-    wfr = GPTWorkflowRemediation(
-        running_config=HConfig.from_text(Platform.CISCO_IOS, running),
-        generated_config=HConfig.from_text(Platform.CISCO_IOS, generated)
+```python
+import asyncio
+
+async def remediate(device):
+    workflow = AIWorkflowRemediation(device.running, device.intended)
+    workflow.set_model("anthropic:claude-sonnet-4-5", cache=shared_cache)
+    workflow.add_rule(acl_rule)
+    return device.name, await workflow.aai_remediation_config()
+
+async def main(devices):
+    limit = asyncio.Semaphore(10)
+
+    async def one(device):
+        async with limit:
+            return await remediate(device)
+
+    return await asyncio.gather(*(one(d) for d in devices), return_exceptions=True)
+```
+
+Share one `ResponseCache` and one `RateLimiter` across devices. Identical
+sections across a fleet then cost a single call.
+
+## Failover
+
+```python
+from pydantic_ai.models.fallback import FallbackModel
+from hier_config_ai import build_agent
+
+workflow.set_agent(
+    build_agent(
+        FallbackModel("anthropic:claude-sonnet-4-5", "openai:gpt-4.1"),
+        driver=running.driver,
     )
-
-    # Add your rules...
-    wfr.add_gpt_rule(your_rule)
-    wfr.set_gpt_client(client)
-
-    # Generate (uses cache if available, respects rate limits)
-    remediation = wfr.gpt_remediation_config()
-    print(f"\n=== {device_file} ===\n{remediation}")
+)
 ```
 
-## Example 5: Custom Prompt Template
-
-Tailor the AI prompt for your specific device platform and requirements.
-
-### Problem
-
-You need the AI to understand your specific environment, naming conventions, and safety requirements.
-
-### Solution
+## Self-hosted model
 
 ```python
-from hier_config import HConfig, Platform
-from hier_config_gpt import GPTWorkflowRemediation, PromptTemplate
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config_gpt.clients import ChatGPTClient
+from pydantic_ai.models.ollama import OllamaModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
-# Custom template for your environment
-custom_template = """
-You are configuring Cisco IOS routers in a financial services production environment.
-
-CRITICAL REQUIREMENTS:
-- All changes must maintain PCI-DSS compliance
-- Network connectivity must never be interrupted
-- Changes must be reversible
-- Include explicit wait times where needed
-
-CURRENT CONFIGURATION:
-{running_config}
-
-DESIRED CONFIGURATION:
-{generated_config}
-
-REMEDIATION GUIDELINES:
-{description}
-
-EXAMPLE TRANSFORMATION:
-Input: {example_running_config}
-Output: {example_remediation_config}
-
-Generate JSON response: {{"plan": ["command1", "command2", ...]}}
-Each command must be a complete Cisco IOS command.
-"""
-
-template = PromptTemplate(template=custom_template)
-
-# Use custom template
-running = open("router.conf").read()
-generated = open("desired.conf").read()
-
-wfr = GPTWorkflowRemediation(
-    running_config=HConfig.from_text(Platform.CISCO_IOS, running),
-    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated),
-    prompt_template=template
+model = OllamaModel(
+    "qwen2.5-coder:7b",
+    provider=OllamaProvider(base_url="http://localhost:11434/v1"),
 )
-
-# Add rules and generate...
-client = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"))
-wfr.set_gpt_client(client)
-wfr.add_gpt_rule(your_rule)
-remediation = wfr.gpt_remediation_config()
+workflow.set_model(model, output_mode="native", settings={"temperature": 0.0})
 ```
 
-## Example 6: VLAN Configuration
+Structured output needs tool calling. Small local models often lack it, and will
+fail validation repeatedly rather than quietly returning something wrong.
 
-Handle VLAN changes with proper dependency management.
-
-### Problem
-
-VLAN changes require careful ordering to avoid disrupting trunk ports and access ports.
-
-### Solution
+## Handling failure
 
 ```python
-from hier_config import HConfig, Platform
-from hier_config.models import MatchRule
-from hier_config_gpt import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config_gpt.clients import ChatGPTClient
+from hier_config_ai import AIClientInitializationError, RemediationError
 
-running_config = """
-vlan 10
-  name OLD-DATA
-interface GigabitEthernet0/1
-  switchport access vlan 10
-"""
-
-generated_config = """
-vlan 20
-  name NEW-DATA
-interface GigabitEthernet0/1
-  switchport access vlan 20
-"""
-
-wfr = GPTWorkflowRemediation(
-    running_config=HConfig.from_text(Platform.CISCO_IOS, running_config),
-    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_config)
-)
-
-description = """
-When changing VLAN assignments:
-1. Create new VLAN first
-2. Move interfaces to new VLAN
-3. Remove old VLAN only after all interfaces are moved
-This prevents interface errors.
-"""
-
-lineage = (MatchRule(startswith="vlan"),)
-example = GPTRemediationExample(
-    running_config="vlan 10\ninterface Gi0/1\n  switchport access vlan 10",
-    remediation_config="vlan 20\ninterface Gi0/1\n  switchport access vlan 20\nno vlan 10"
-)
-
-gpt_rule = GPTRemediationRule(description=description, lineage=lineage, example=example)
-wfr.add_gpt_rule(gpt_rule)
-
-client = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"))
-wfr.set_gpt_client(client)
-remediation = wfr.gpt_remediation_config()
-print(remediation)
+try:
+    remediation = await workflow.aai_remediation_config()
+except AIClientInitializationError:
+    print("No model configured.")
+except RemediationError as exc:
+    print(f"Could not produce a usable plan: {exc}")
 ```
 
-## Testing and Validation
-
-Always test generated remediation plans in a lab environment:
-
-```python
-# Generate remediation
-remediation = wfr.gpt_remediation_config()
-
-# Save for review
-with open("remediation_plan.txt", "w") as f:
-    f.write(remediation)
-
-# Test in lab first
-print("REVIEW THIS PLAN BEFORE APPLYING TO PRODUCTION:")
-print(remediation)
-
-# After validation, apply to production
-# apply_to_device(remediation)  # Your deployment function
-```
-
-## Next Steps
-
-- Review the [API Reference](api-reference.md) for detailed class documentation
-- Learn about [advanced features](user-guide/advanced-features.md) for production use
-- Customize [prompt templates](user-guide/prompt-templates.md) for your environment
-- Explore different [LLM clients](user-guide/clients.md) and their capabilities
+A plan that fails validation is not an error. It goes back to the model, which
+corrects it. `RemediationError` means the model could not produce a working plan
+within its retries.

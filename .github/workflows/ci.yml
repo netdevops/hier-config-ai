@@ -30,9 +30,27 @@ jobs:
         version: latest
     - name: Run tests
       run: |
-        poetry install --no-interaction --with dev,anthropic,chatgpt,ollama
+        poetry install --no-interaction --with dev,evals --all-extras
         poetry run python scripts/build.py lint
         poetry run python scripts/build.py pytest --coverage
+
+  packaging:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+    - name: Build the wheel
+      run: poetry build
+    - name: Verify every extra publishes its requirements
+      run: python scripts/check_packaging.py
+
   docs:
     runs-on: ubuntu-latest
     steps:
@@ -46,7 +64,7 @@ jobs:
       with:
         version: latest
     - name: Install dependencies
-      run: poetry install --no-interaction --with dev,anthropic,chatgpt,ollama
+      run: poetry install --no-interaction --with dev --all-extras
     - name: Build documentation
       run: poetry run mkdocs build --strict
     - name: Upload docs artifact

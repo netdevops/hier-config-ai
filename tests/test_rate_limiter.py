@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import time
 
-from hier_config_gpt.clients.rate_limiter import RateLimiter
+import pytest
+
+from hier_config_ai.rate_limiter import RateLimiter
 
 
 def test_rate_limiter_initial_capacity() -> None:
@@ -57,3 +59,35 @@ def test_rate_limiter_reset() -> None:
     assert limiter.acquire(tokens=5) is True
     limiter.reset()
     assert limiter.available_tokens == 5
+
+
+def test_zero_max_requests_is_refused() -> None:
+    """A bucket that can never fill is a configuration error."""
+    with pytest.raises(ValueError, match="max_requests"):
+        RateLimiter(max_requests=0)
+
+
+def test_zero_time_window_is_refused() -> None:
+    """A zero-length window would divide by zero when refilling."""
+    with pytest.raises(ValueError, match="time_window_seconds"):
+        RateLimiter(max_requests=1, time_window_seconds=0.0)
+
+
+async def test_async_acquire_grants_when_tokens_are_free() -> None:
+    """The async path takes a token without blocking the event loop."""
+    limiter = RateLimiter(max_requests=2, time_window_seconds=60.0)
+    assert await limiter.aacquire() is True
+
+
+async def test_async_acquire_times_out_when_starved() -> None:
+    """A caller that cannot be served within its timeout is told so."""
+    limiter = RateLimiter(max_requests=1, time_window_seconds=600.0)
+    assert await limiter.aacquire() is True
+    assert await limiter.aacquire(timeout=0.01) is False
+
+
+async def test_async_acquire_waits_then_succeeds() -> None:
+    """A starved caller is served once the bucket refills."""
+    limiter = RateLimiter(max_requests=1, time_window_seconds=0.05)
+    assert await limiter.aacquire() is True
+    assert await limiter.aacquire(timeout=1.0) is True

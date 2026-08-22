@@ -108,9 +108,7 @@ def _pytest_command(
     if profile:
         command += " --profile --profile-svg"
     if coverage:
-        command += (
-            " --cov=hier_config_gpt --cov-fail-under=95 --cov-report=term-missing"
-        )
+        command += " --cov=hier_config_ai --cov-fail-under=95 --cov-report=term-missing"
     if threaded:
         command += " -n auto"
     return command
@@ -187,7 +185,7 @@ def _project_base_files(glob: str) -> Iterable[Path]:
 
 
 def _project_paths(glob: str) -> Iterable[Path]:
-    for base_dir in ("hier_config_gpt", "tests", "scripts"):
+    for base_dir in ("hier_config_ai", "tests", "scripts", "evals", "examples"):
         base_path = _repo_path().joinpath(base_dir)
         if not base_path.exists():
             message = f"{base_path=} does not exist"
@@ -209,17 +207,17 @@ def _run_commands_threaded(commands: tuple[str, ...]) -> NoReturn:
         ):
             command, return_code, output = future.result()
             if return_code:
-                print(output)  # ruff:ignore[print]
+                print(output)
             return_codes[command] = return_code
 
     error_found = False
     for command, return_code in return_codes.items():
         if return_code != 0:
-            print(f"{command.split()[0]} -> {return_code}")  # ruff:ignore[print]
+            print(f"{command.split()[0]} -> {return_code}")
             error_found = True
     if error_found:
         sys.exit(1)
-    print("No issues found")  # ruff:ignore[print]
+    print("No issues found")
     sys.exit()
 
 
@@ -229,7 +227,7 @@ def _run(
     check: bool = True,
     environment: dict[str, str] | None = None,
 ) -> int:
-    print(f"\n======== {command} ========\n")  # ruff:ignore[print]
+    print(f"\n======== {command} ========\n")
     my_env = os.environ.copy()
     if environment:
         my_env.update(environment)
@@ -240,7 +238,7 @@ def _run(
 
 
 def _run_for_thread(command: str) -> tuple[str, int, str]:
-    print(f"Running: {command}")  # ruff:ignore[print]
+    print(f"Running: {command}")
     result = subprocess.run(  # ruff:ignore[subprocess-without-shell-equals-true]
         command.split(),
         check=False,

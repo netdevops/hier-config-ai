@@ -1,644 +1,204 @@
 # API Reference
 
-Complete API documentation for hier-config-gpt classes and functions.
+## AIWorkflowRemediation
 
-## Core Classes
-
-### GPTWorkflowRemediation
-
-Main class that extends `hier_config.WorkflowRemediation` with GPT capabilities.
+Extends hier-config's `WorkflowRemediation`.
 
 ```python
-from hier_config_gpt import GPTWorkflowRemediation
-```
-
-#### Constructor
-
-```python
-GPTWorkflowRemediation(
+AIWorkflowRemediation(
     running_config: HConfig,
     generated_config: HConfig,
-    prompt_template: Optional[PromptTemplate] = None
+    plugins: Iterable[Callable[[HConfig], None]] = (),
+    *,
+    prompt_template: PromptTemplate | None = None,
+    max_concurrency: int = 4,
 )
 ```
 
-**Parameters:**
+| Method | Description |
+| --- | --- |
+| `set_model(model, *, settings=None, cache=None, rate_limiter=None, retries=3, output_mode="tool", enable_tools=True)` | Build an agent for a model name or `Model`. |
+| `set_agent(agent)` | Use a pre-built agent. |
+| `add_rule(rule)` | Add a remediation rule. |
+| `clear_rules()` | Remove every rule. |
+| `await aai_remediation_config()` | Generate the remediation config. Rules run concurrently. |
+| `ai_remediation_config()` | Synchronous form. Raises `RuntimeError` inside a running event loop. |
 
-- `running_config` (HConfig): Current device configuration
-- `generated_config` (HConfig): Desired configuration state
-- `prompt_template` (PromptTemplate, optional): Custom prompt template for LLM communication
+| Property | Description |
+| --- | --- |
+| `rules` | The rules currently loaded. |
+| `retriever` | Retriever handed to tools and validators. Plain attribute; set it before `set_model()`. |
+| `usage` | Per-rule token usage from the most recent run. |
 
-**Example:**
+Raises `AIClientInitializationError` when no model is configured, and
+`RemediationError` when no rules are loaded or the model produces nothing usable.
 
-```python
-from hier_config import HConfig, Platform
+## Models
 
-wfr = GPTWorkflowRemediation(
-    running_config=HConfig.from_text(Platform.CISCO_IOS, running_text),
-    generated_config=HConfig.from_text(Platform.CISCO_IOS, generated_text)
-)
-```
+### AIRemediationRule
 
-#### Methods
+| Field | Type | Description |
+| --- | --- | --- |
+| `description` | `str` | What the model should achieve. Write it as an instruction. |
+| `lineage` | `tuple[MatchRule, ...]` | Selects the config section, as in hier-config. |
+| `example` | `AIRemediationExample` | A worked running/remediation pair. |
 
-##### set_gpt_client()
+### AIRemediationExample
 
-```python
-set_gpt_client(gpt_client: GPTClient) -> None
-```
+| Field | Type |
+| --- | --- |
+| `running_config` | `str` |
+| `remediation_config` | `str` |
 
-Sets the LLM client for generating remediation plans.
+### AIRemediationContext
 
-**Parameters:**
+Built per rule and passed to the prompt template.
 
-- `gpt_client` (GPTClient): An instance of ChatGPTClient, ClaudeGPTClient, or OllamaGPTClient
+| Field | Type |
+| --- | --- |
+| `description` | `str` |
+| `running_config` | `str` |
+| `generated_config` | `str` |
+| `example` | `AIRemediationExample` |
 
-**Example:**
+### AIPlanResponse
 
-```python
-from hier_config_gpt.clients import ChatGPTClient
+What the model returns, after validation.
 
-client = ChatGPTClient(api_key="your-key")
-wfr.set_gpt_client(client)
-```
+| Field | Type | Description |
+| --- | --- | --- |
+| `plan` | `list[str]` | The commands. Blank entries are dropped; indentation is preserved. |
+| `reasoning` | `str` | Why the model chose them. |
+| `confidence` | `"high" \| "medium" \| "low"` | The model's own assessment. |
+| `commands_requiring_review` | `list[str]` | Commands that can cut reachability. |
+| `metadata` | `dict[str, Any]` | Free-form. Consensus results land here. |
 
-##### add_gpt_rule()
-
-```python
-add_gpt_rule(rule: GPTRemediationRule) -> None
-```
-
-Adds a remediation rule to the workflow.
-
-**Parameters:**
-
-- `rule` (GPTRemediationRule): Rule defining how to remediate specific configuration sections
-
-**Example:**
-
-```python
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config.models import MatchRule
-
-rule = GPTRemediationRule(
-    description="How to remediate...",
-    lineage=(MatchRule(startswith="ip access-list"),),
-    example=GPTRemediationExample(
-        running_config="...",
-        remediation_config="..."
-    )
-)
-wfr.add_gpt_rule(rule)
-```
-
-##### clear_gpt_rules()
+## build_agent
 
 ```python
-clear_gpt_rules() -> None
+build_agent(
+    model: Model | str,
+    *,
+    driver: HConfigDriverBase | None = None,
+    settings: ModelSettings | None = None,
+    cache: ResponseCache | None = None,
+    rate_limiter: RateLimiter | None = None,
+    retriever: Retriever | None = None,
+    retries: int = 3,
+    max_concurrency: int | None = None,
+    output_mode: Literal["tool", "native", "prompted"] = "tool",
+    enable_tools: bool = True,
+) -> Agent[RemediationDeps, AIPlanResponse]
 ```
 
-Removes all GPT rules from the workflow.
+Set `output_mode="native"` for a small self-hosted model; the default
+`"tool"` mode relies on tool calling, which they are often unreliable at.
 
-**Example:**
+Passing `driver` adds that platform's indentation, section exits, replacement
+negations, and idempotent commands to the system prompt.
+
+## RemediationDeps
+
+Per-run state shared by the prompt, tools, and validators.
+
+| Field | Type |
+| --- | --- |
+| `running_config` | `HConfig` |
+| `generated_config` | `HConfig` |
+| `retriever` | `Retriever \| None` |
+
+`deps.driver` returns the running config's driver. `canonical_future`,
+`canonical_lines`, and `canonical_line_set` are cached derivations of the
+convergence target, computed once per run.
+
+## Retriever
+
+A protocol. No implementation ships in 0.2.0.
 
 ```python
-wfr.clear_gpt_rules()
+async def search(query: str, *, platform: Platform, k: int = 5) -> list[str]
+async def similar_remediations(
+    running_config: HConfig,
+    generated_config: HConfig,
+    *,
+    platform: Platform,
+    k: int = 3,
+) -> list[AIRemediationExample]
 ```
 
-##### gpt_remediation_config()
+## Validation
+
+| Function | Description |
+| --- | --- |
+| `remaining_difference(deps, plan)` | Returns `(missing, unwanted)`. Both empty means the plan converges. |
+| `plan_converges(deps, plan)` | Whether a plan produces the intended configuration. |
+| `review_patterns(negation_prefix)` | Risky-command patterns for a platform's negation syntax. |
+| `format_difference(missing, unwanted)` | Renders a failed check for the model. |
+| `validate_plan(ctx, output)` | The output validator. Raises `ModelRetry`. |
+
+## Tools
+
+| Function | Description |
+| --- | --- |
+| `test_remediation(ctx, commands)` | Reports what candidate commands would do. |
+| `get_config_section(ctx, lineage)` | Fetches a further config section. |
+| `build_tools(retriever=None)` | Returns the tools an agent should be given. |
+
+## consensus_plan
 
 ```python
-gpt_remediation_config() -> HConfig
+await consensus_plan(agents, prompt, deps) -> AIPlanResponse
 ```
 
-Generates the GPT-based remediation plan.
+Runs every agent concurrently and returns the plan a majority agree on. Votes
+are counted on parsed configuration, using `deps.driver`. Raises
+`ConsensusError` if every agent fails or no plan reaches a majority, and
+`ValueError` if no agents were supplied.
 
-**Returns:**
+`plan_fingerprint(driver, plan)` exposes the value votes are counted on.
 
-- `HConfig`: Configuration object containing remediation commands
-
-**Raises:**
-
-- `GPTClientInitializationError`: If no GPT client is set
-- `RemediationError`: If remediation plan generation fails
-
-**Example:**
+## Caching and rate limiting
 
 ```python
-try:
-    remediation = wfr.gpt_remediation_config()
-    print(remediation)
-except RemediationError as e:
-    print(f"Error: {e}")
+ResponseCache(cache_dir=None, ttl_seconds=3600.0, *, enabled=True)
+RateLimiter(max_requests=60, time_window_seconds=60.0)
 ```
 
-## Model Classes
+| Method | Description |
+| --- | --- |
+| `ResponseCache.build_key(*parts)` | Hash parts into a key. |
+| `ResponseCache.get(key)` / `.set(key, payload)` | Read and write entries. |
+| `ResponseCache.clear()` / `.cleanup_expired()` | Remove entries. |
+| `RateLimiter.acquire(tokens=1, timeout=None)` | Take tokens, blocking. |
+| `RateLimiter.aacquire(tokens=1, timeout=None)` | Take tokens without blocking the event loop. |
+| `RateLimiter.try_acquire(tokens=1)` | Take tokens only if free now. |
 
-### GPTRemediationRule
+`CachedModel` and `RateLimitedModel` wrap any PydanticAI model.
 
-Defines a rule for AI-driven configuration remediation.
+## PromptTemplate
 
 ```python
-from hier_config_gpt.models import GPTRemediationRule
+PromptTemplate(template: str | None = None)
+PromptTemplate.from_file(path)
+PromptTemplate.build(context: AIRemediationContext) -> str
 ```
 
-#### Attributes
-
-```python
-class GPTRemediationRule(BaseModel):
-    description: str
-    lineage: tuple[MatchRule, ...]
-    example: GPTRemediationExample
-```
-
-**Fields:**
-
-- `description` (str): Detailed instructions for the LLM on how to remediate
-- `lineage` (tuple[MatchRule, ...]): Match rules to identify which configurations this rule applies to
-- `example` (GPTRemediationExample): Example transformation to guide the LLM
-
-**Example:**
-
-```python
-from hier_config.models import MatchRule
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-
-rule = GPTRemediationRule(
-    description="When remediating ACLs: 1. Resequence, 2. Add temp permit...",
-    lineage=(MatchRule(startswith="ip access-list"),),
-    example=GPTRemediationExample(
-        running_config="ip access-list extended TEST\n  10 permit ip any any",
-        remediation_config="ip access-list resequence TEST 10 10"
-    )
-)
-```
-
-### GPTRemediationExample
-
-Example configuration transformation for LLM guidance.
-
-```python
-from hier_config_gpt.models import GPTRemediationExample
-```
-
-#### Attributes
-
-```python
-class GPTRemediationExample(BaseModel):
-    running_config: str
-    remediation_config: str
-```
-
-**Fields:**
-
-- `running_config` (str): Example of current configuration state
-- `remediation_config` (str): Example of commands to transform it
-
-**Example:**
-
-```python
-example = GPTRemediationExample(
-    running_config="interface Gi0/1\n  ip address 10.0.0.1 255.255.255.0",
-    remediation_config="interface Gi0/1\n  shutdown\n  ip address 10.0.1.1 255.255.255.0\n  no shutdown"
-)
-```
-
-### GPTRemediationContext
-
-Internal context object passed to LLMs (typically not used directly).
-
-```python
-class GPTRemediationContext(BaseModel):
-    description: str
-    running_config: str
-    generated_config: str
-    example: GPTRemediationExample
-```
-
-## Prompt Template
-
-### PromptTemplate
-
-Customizable prompt template for LLM communication.
-
-```python
-from hier_config_gpt import PromptTemplate
-```
-
-#### Constructor
-
-```python
-PromptTemplate(template: Optional[str] = None)
-```
-
-**Parameters:**
-
-- `template` (str, optional): Custom template string with required placeholders
-
-**Required Placeholders:**
-
-- `{running_config}`: Current configuration
-- `{generated_config}`: Desired configuration
-- `{description}`: Remediation instructions
-- `{example_running_config}`: Example input
-- `{example_remediation_config}`: Example output
-
-**Example:**
-
-```python
-custom_template = """
-Generate commands to transform:
-Current: {running_config}
-Target: {generated_config}
-Rules: {description}
-Example: {example_running_config} -> {example_remediation_config}
-"""
-
-template = PromptTemplate(template=custom_template)
-```
-
-#### Class Methods
-
-##### from_file()
-
-```python
-@classmethod
-from_file(cls, file_path: str) -> PromptTemplate
-```
-
-Loads a prompt template from a file.
-
-**Parameters:**
-
-- `file_path` (str): Path to template file
-
-**Returns:**
-
-- `PromptTemplate`: Instance with loaded template
-
-**Example:**
-
-```python
-template = PromptTemplate.from_file("my_template.txt")
-wfr = GPTWorkflowRemediation(
-    running_config=running,
-    generated_config=generated,
-    prompt_template=template
-)
-```
-
-#### Instance Methods
-
-##### build()
-
-```python
-build(context: GPTRemediationContext) -> str
-```
-
-Builds a prompt from context (typically called internally).
-
-## Client Classes
-
-### ChatGPTClient
-
-OpenAI GPT client for configuration remediation.
-
-```python
-from hier_config_gpt.clients import ChatGPTClient
-```
-
-#### Constructor
-
-```python
-ChatGPTClient(
-    api_key: str,
-    model: str = "gpt-4o",
-    timeout: float = 30.0,
-    max_retries: int = 3,
-    temperature: float = 0.0
-)
-```
-
-**Parameters:**
-
-- `api_key` (str): OpenAI API key
-- `model` (str): Model name (default: "gpt-4o")
-- `timeout` (float): Request timeout in seconds
-- `max_retries` (int): Number of retry attempts
-- `temperature` (float): Sampling temperature (0.0 = deterministic)
-
-**Example:**
-
-```python
-import os
-client = ChatGPTClient(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    model="gpt-4o",
-    timeout=30.0
-)
-```
-
-### ClaudeGPTClient
-
-Anthropic Claude client for configuration remediation.
-
-```python
-from hier_config_gpt.clients import ClaudeGPTClient
-```
-
-#### Constructor
-
-```python
-ClaudeGPTClient(
-    api_key: str,
-    model: str = "claude-3-5-sonnet-20241022",
-    timeout: float = 30.0,
-    max_retries: int = 3,
-    max_tokens: int = 4096
-)
-```
-
-**Parameters:**
-
-- `api_key` (str): Anthropic API key
-- `model` (str): Model name
-- `timeout` (float): Request timeout in seconds
-- `max_retries` (int): Number of retry attempts
-- `max_tokens` (int): Maximum response length
-
-**Example:**
-
-```python
-import os
-client = ClaudeGPTClient(
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-    model="claude-3-5-sonnet-20241022"
-)
-```
-
-### OllamaGPTClient
-
-Ollama client for self-hosted LLM models.
-
-```python
-from hier_config_gpt.clients import OllamaGPTClient
-```
-
-#### Constructor
-
-```python
-OllamaGPTClient(
-    host: str = "http://localhost:11434",
-    model: str = "llama3.2",
-    timeout: float = 60.0,
-    keep_alive: str = "5m"
-)
-```
-
-**Parameters:**
-
-- `host` (str): Ollama server URL
-- `model` (str): Model name
-- `timeout` (float): Request timeout in seconds
-- `keep_alive` (str): How long to keep model in memory
-
-**Example:**
-
-```python
-client = OllamaGPTClient(
-    host="http://localhost:11434",
-    model="llama3.2",
-    timeout=60.0
-)
-```
-
-### CachedGPTClient
-
-Wrapper that adds response caching to any GPT client.
-
-```python
-from hier_config_gpt.clients import CachedGPTClient, ResponseCache
-```
-
-#### Constructor
-
-```python
-CachedGPTClient(
-    base_client: GPTClient,
-    cache: ResponseCache
-)
-```
-
-**Parameters:**
-
-- `base_client` (GPTClient): Underlying GPT client
-- `cache` (ResponseCache): Cache instance
-
-**Example:**
-
-```python
-from hier_config_gpt.clients import ChatGPTClient, CachedGPTClient, ResponseCache
-
-base = ChatGPTClient(api_key="...")
-cache = ResponseCache(ttl_seconds=3600)
-client = CachedGPTClient(base, cache)
-```
-
-### RateLimitedGPTClient
-
-Wrapper that adds rate limiting to any GPT client.
-
-```python
-from hier_config_gpt.clients import RateLimitedGPTClient
-```
-
-#### Constructor
-
-```python
-RateLimitedGPTClient(
-    base_client: GPTClient,
-    max_requests: int = 60,
-    time_window_seconds: float = 60.0
-)
-```
-
-**Parameters:**
-
-- `base_client` (GPTClient): Underlying GPT client
-- `max_requests` (int): Maximum requests per time window
-- `time_window_seconds` (float): Time window in seconds
-
-**Example:**
-
-```python
-from hier_config_gpt.clients import ChatGPTClient, RateLimitedGPTClient
-
-base = ChatGPTClient(api_key="...")
-client = RateLimitedGPTClient(base, max_requests=60, time_window_seconds=60.0)
-```
-
-### MultiProviderGPTClient
-
-Client that uses multiple LLM providers with optional quorum consensus.
-
-```python
-from hier_config_gpt.clients import MultiProviderGPTClient
-```
-
-#### Constructor
-
-```python
-MultiProviderGPTClient(
-    providers: list[GPTClient],
-    enable_quorum: bool = False,
-    require_unanimous: bool = False
-)
-```
-
-**Parameters:**
-
-- `providers` (list[GPTClient]): List of GPT clients to use
-- `enable_quorum` (bool): Enable majority voting
-- `require_unanimous` (bool): Require all providers to agree
-
-**Example:**
-
-```python
-from hier_config_gpt.clients import (
-    ChatGPTClient,
-    ClaudeGPTClient,
-    MultiProviderGPTClient
-)
-
-openai = ChatGPTClient(api_key="...")
-claude = ClaudeGPTClient(api_key="...")
-
-client = MultiProviderGPTClient(
-    providers=[openai, claude],
-    enable_quorum=True
-)
-```
-
-### ResponseCache
-
-Cache for storing LLM responses.
-
-```python
-from hier_config_gpt.clients import ResponseCache
-```
-
-#### Constructor
-
-```python
-ResponseCache(ttl_seconds: int = 3600)
-```
-
-**Parameters:**
-
-- `ttl_seconds` (int): Time-to-live for cache entries (default: 1 hour)
-
-**Example:**
-
-```python
-cache = ResponseCache(ttl_seconds=7200)  # 2 hours
-```
+Requires `{running_config}`, `{generated_config}`, `{description}`,
+`{example_running_config}`, and `{example_remediation_config}`.
 
 ## Exceptions
 
-### GPTClientInitializationError
-
-Raised when GPT client is not properly initialized.
-
-```python
-from hier_config_gpt.exceptions import GPTClientInitializationError
+```
+HierConfigAIError
+├── AIClientInitializationError
+└── RemediationError
+    └── ConsensusError
 ```
 
-**Example:**
+## Other
 
-```python
-try:
-    remediation = wfr.gpt_remediation_config()
-except GPTClientInitializationError as e:
-    print("Please set a GPT client first")
-```
-
-### RemediationError
-
-Raised when remediation plan generation fails.
-
-```python
-from hier_config_gpt.exceptions import RemediationError
-```
-
-**Example:**
-
-```python
-try:
-    remediation = wfr.gpt_remediation_config()
-except RemediationError as e:
-    print(f"Remediation failed: {e}")
-```
-
-## Type Definitions
-
-### GPTClient Protocol
-
-Base protocol that all clients must implement.
-
-```python
-from typing import Protocol
-
-class GPTClient(Protocol):
-    def generate_plan(self, prompt: str) -> GPTResponse:
-        """Generate remediation plan from prompt."""
-        ...
-```
-
-## Usage Pattern
-
-Complete example showing typical API usage:
-
-```python
-import os
-from hier_config import HConfig, Platform
-from hier_config.models import MatchRule
-from hier_config_gpt import GPTWorkflowRemediation
-from hier_config_gpt.models import GPTRemediationRule, GPTRemediationExample
-from hier_config_gpt.clients import ChatGPTClient
-
-# Load configurations
-running = HConfig.from_text(Platform.CISCO_IOS, running_text)
-generated = HConfig.from_text(Platform.CISCO_IOS, generated_text)
-
-# Create workflow
-wfr = GPTWorkflowRemediation(
-    running_config=running,
-    generated_config=generated
-)
-
-# Define rule
-rule = GPTRemediationRule(
-    description="Remediation instructions...",
-    lineage=(MatchRule(startswith="ip access-list"),),
-    example=GPTRemediationExample(
-        running_config="...",
-        remediation_config="..."
-    )
-)
-
-# Add rule and client
-wfr.add_gpt_rule(rule)
-client = ChatGPTClient(api_key=os.getenv("OPENAI_API_KEY"))
-wfr.set_gpt_client(client)
-
-# Generate remediation
-remediation = wfr.gpt_remediation_config()
-print(remediation)
-```
-
-## See Also
-
-- [Quick Start Guide](quickstart.md) - Get started quickly
-- [Examples](examples.md) - Real-world usage examples
-- [User Guide](user-guide/clients.md) - Detailed client documentation
-- [Advanced Features](user-guide/advanced-features.md) - Caching, rate limiting, quorum
+| Name | Description |
+| --- | --- |
+| `scoped_config(config, lineage)` | Returns only the part of a config a lineage selects. |
+| `build_context(rule, running, generated)` | Builds the prompt context for one rule. |
+| `__version__` | The installed version. |

@@ -1,23 +1,34 @@
 # Changelog
 
-For the complete changelog, see [CHANGELOG.md](https://github.com/netdevops/hier-config-gpt/blob/main/CHANGELOG.md) in the main repository.
+The complete changelog lives in
+[CHANGELOG.md](https://github.com/netdevops/hier-config-ai/blob/main/CHANGELOG.md).
 
-## Recent Changes
+## 0.2.0
 
-### Version 0.1.0
+Renamed from `hier-config-gpt` to `hier-config-ai`, and rebuilt on
+[PydanticAI](https://ai.pydantic.dev/). A deliberate break from 0.1.x, with no
+compatibility shims.
 
-Initial release of hier-config-gpt with the following features:
+- Plans are validated against hier-config and corrected by the model through
+  `ModelRetry`, instead of being returned unchecked.
+- The model can call `test_remediation` to see what its commands would do.
+- Destructive commands are rejected; risky ones are surfaced for review.
+- Platform rules come from the hier-config driver rather than a hardcoded
+  prompt.
+- Async support, with rules running concurrently.
+- One provider extra replaces three, and Google, Bedrock, Groq, and Mistral join
+  OpenAI and Anthropic.
+- Fixed: extras that installed nothing, imports that required every SDK, a cache
+  that could return an empty plan as success, quorum that could not reach
+  agreement, and a `prompt_template` argument that was documented but never
+  existed.
 
-- **Multi-Provider LLM Support**: OpenAI GPT, Anthropic Claude, and Ollama
-- **Intelligent Remediation**: AI-driven configuration remediation planning
-- **Response Caching**: Built-in caching to reduce API costs
-- **Rate Limiting**: Token bucket algorithm for API throttling prevention
-- **Quorum Mode**: Multi-provider consensus mechanism
-- **Configurable Prompts**: Customizable prompt templates
-- **Production Ready**: Comprehensive error handling and retry logic
+## 0.1.0
+
+Initial release, as `hier-config-gpt`.
 
 ## Links
 
-- [Full Changelog](https://github.com/netdevops/hier-config-gpt/blob/main/CHANGELOG.md)
-- [Release Notes](https://github.com/netdevops/hier-config-gpt/releases)
-- [GitHub Issues](https://github.com/netdevops/hier-config-gpt/issues)
+- [Full changelog](https://github.com/netdevops/hier-config-ai/blob/main/CHANGELOG.md)
+- [Releases](https://github.com/netdevops/hier-config-ai/releases)
+- [Issues](https://github.com/netdevops/hier-config-ai/issues)

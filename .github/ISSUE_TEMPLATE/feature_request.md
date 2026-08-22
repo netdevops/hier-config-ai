@@ -17,7 +17,7 @@ A clear and concise description of what you want to happen.
 Show how you would like to use this feature:
 
 ```python
-from hier_config_gpt import NewFeature
+from hier_config_ai import NewFeature
 
 # Example of how the feature would be used
 ```
