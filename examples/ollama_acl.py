@@ -22,8 +22,8 @@ import sys
 
 from hier_config import HConfig, Platform, WorkflowRemediation
 from hier_config.models import MatchRule
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.models.ollama import OllamaModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
 from hier_config_ai import (
     AIRemediationExample,
@@ -33,9 +33,13 @@ from hier_config_ai import (
 
 MODEL_NAME = sys.argv[1] if len(sys.argv) > 1 else "qwen2.5-coder:7b"
 
-model = OpenAIChatModel(
+# PydanticAI's own Ollama provider, not a bare OpenAI-compatible client. It
+# carries a per-model-family profile and tells the model layer that Ollama
+# supports a JSON schema on the response but not strict tool definitions --
+# exactly the settings that decide whether a small model can answer at all.
+model = OllamaModel(
     MODEL_NAME,
-    provider=OpenAIProvider(base_url="http://localhost:11434/v1", api_key="ollama"),
+    provider=OllamaProvider(base_url="http://localhost:11434/v1"),
 )
 
 running = HConfig.from_text(

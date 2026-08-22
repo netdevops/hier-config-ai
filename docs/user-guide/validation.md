@@ -71,16 +71,16 @@ list is the standard case: a temporary `1 permit ip any any` goes in first so
 the list never denies live traffic while its entries are renumbered, and comes
 out at the end.
 
-Commands the plan adds and then removes are excluded from the comparison, since
-their net effect on the device is nothing. Both spellings of the removal are
-recognised: `no <command>`, which repeats the line, and `no <sequence>`, which
-names only its number — the way an engineer actually deletes an access-list
-entry.
+This works because the plan is applied one command at a time rather than merged
+in a single pass. By the time the removal is evaluated, the temporary entry is
+present, so the pair cancels through the platform driver's ordinary negation
+handling — no pattern-matching of the command text, and no per-platform special
+case.
 
-Forgetting the cleanup is still rejected. A `permit ip any any` left in a live
-access list is a hole, and the allowance must not become a way to smuggle one
-through. So is `no 20` for an entry the plan never added, which is a real
-deletion rather than scaffolding.
+Order also separates scaffolding from churn. A plan that deletes an entry and
+puts it straight back has renumbered nothing, and folding the commands in order
+catches that. Forgetting the cleanup is likewise rejected: a `permit ip any any`
+left in a live access list is a hole.
 
 ## Guardrails
 

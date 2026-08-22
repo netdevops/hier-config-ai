@@ -14,17 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default failed against every local model tested. `"native"` asks for a JSON
   schema on the response instead, which they handle.
 - `enable_tools` on `build_agent()` and `set_model()`, for models that cannot
-  cope with tools being offered.
+  cope with tools being offered. The system prompt follows the tool list, so a
+  model given no tools is no longer told to call them.
 - Plans may add scaffolding and take it away again. Resequencing an access list
   safely needs a temporary allow-all so the list never denies live traffic
-  mid-change; the plan is parsed into a tree before comparison, which loses
-  command order, so both halves of that pair looked like configuration left
-  behind and every traffic-safe plan was rejected. Scaffolding the plan itself
-  removes is now excluded from the comparison, whether the removal repeats the
-  command or names only its sequence number (`no 1`). Forgetting the cleanup is
-  still caught, so a `permit ip any any` cannot be smuggled into a live access
-  list, and removing a sequence the plan never added still counts as a real
-  deletion.
+  mid-change. The plan is now applied one command at a time rather than merged
+  in a single pass, so by the time the removal is evaluated the temporary entry
+  exists and the pair cancels through the driver's own negation handling. This
+  works on every platform and needs no pattern-matching of command text.
+  Forgetting the cleanup is still caught, and so is a plan that deletes an entry
+  and puts it straight back without renumbering it.
 - `examples/ollama_acl.py` and `examples/ollama_quickstart.py`, both
   runnable.
 - "Replacing a Custom Workflow" documentation, putting access-list resequencing

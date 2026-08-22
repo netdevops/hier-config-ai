@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from hier_config.models import NegationStrategy
 from pydantic_ai import Agent, NativeOutput, PromptedOutput
+from pydantic_ai.output import StructuredOutputMode
 
 from .deps import RemediationDeps
 from .model_wrappers import CachedModel, RateLimitedModel
@@ -23,6 +24,12 @@ if TYPE_CHECKING:
     from .deps import Retriever
     from .rate_limiter import RateLimiter
 
+TOOL_INSTRUCTIONS = """\
+Call `test_remediation` to check your commands before you answer. It reports
+exactly what your commands would do to the device. Use `get_config_section` when
+you need to see more of the configuration than you were given.
+"""
+
 SYSTEM_PROMPT = """\
 You are a network engineer producing configuration remediation for a live device.
 
@@ -32,10 +39,6 @@ steps, or commentary in the plan.
 
 Indent child commands with spaces to show the command hierarchy. Never use tab
 characters.
-
-Call `test_remediation` to check your commands before you answer. It reports
-exactly what your commands would do to the device. Use `get_config_section` when
-you need to see more of the configuration than you were given.
 
 Your plan is applied to the device and re-checked. If it does not produce the
 intended configuration you are told what is still wrong, and you must correct it.
@@ -49,15 +52,9 @@ _MAX_RULES_SHOWN = 12
 # How many times the model may correct a rejected plan.
 DEFAULT_RETRIES = 3
 
-OutputMode = Literal["tool", "native", "prompted"]
-
-# How the model is asked to return structured output.
-#
-# "tool" is right for the hosted providers, which are reliable at tool calling.
-# Small self-hosted models frequently are not: they answer with the tool-call
-# envelope nested inside the arguments, or emit the call as plain text, and the
-# run dies after exhausting its retries. Those models usually do far better
-# with a JSON schema on the response itself, which is what "native" asks for.
+# PydanticAI's own name for this axis; aliased so callers of this package
+# do not have to import from it.
+OutputMode = StructuredOutputMode
 
 
 def output_spec(
@@ -65,7 +62,14 @@ def output_spec(
 ) -> (
     type[AIPlanResponse] | NativeOutput[AIPlanResponse] | PromptedOutput[AIPlanResponse]
 ):
-    """Return the output specification for a mode."""
+    """Return the output specification for a mode.
+
+    `"tool"` suits the hosted providers, which are reliable at tool calling.
+    Small self-hosted models frequently are not: they answer with the tool-call
+    envelope nested inside the arguments, or emit the call as plain text, and
+    the run dies after exhausting its retries. Those models usually do far
+    better with `"native"`, a JSON schema on the response itself.
+    """
     if mode == "native":
         return NativeOutput(AIPlanResponse)
     if mode == "prompted":
@@ -208,7 +212,13 @@ def build_agent(  # ruff: ignore[too-many-arguments] - an options object would r
     if cache is not None:
         wrapped = CachedModel(wrapped, cache)
 
+    # The prompt describes the tools the agent actually has. Telling a model to
+    # call `test_remediation` when it was given no tools is the confusion
+    # `enable_tools=False` exists to avoid.
+    tools = build_tools(retriever) if enable_tools else []
     instructions = SYSTEM_PROMPT
+    if tools:
+        instructions = f"{instructions}\n{TOOL_INSTRUCTIONS}"
     if driver is not None:
         instructions = f"{instructions}\n{describe_driver(driver)}\n"
 
@@ -218,7 +228,7 @@ def build_agent(  # ruff: ignore[too-many-arguments] - an options object would r
         deps_type=RemediationDeps,
         instructions=instructions,
         model_settings=settings,
-        tools=build_tools(retriever) if enable_tools else [],
+        tools=tools,
         retries=retries,
         max_concurrency=max_concurrency,
     )

@@ -11,7 +11,7 @@ from pydantic_ai import NativeOutput, PromptedOutput
 
 from hier_config_ai.agent import (
     SYSTEM_PROMPT,
-    OutputMode,
+    TOOL_INSTRUCTIONS,
     build_agent,
     describe_driver,
     negation_bullet,
@@ -22,10 +22,19 @@ from hier_config_ai.cache import ResponseCache
 from hier_config_ai.model_wrappers import CachedModel, RateLimitedModel
 from hier_config_ai.models import AIPlanResponse
 from hier_config_ai.rate_limiter import RateLimiter
-from tests.conftest import CORRECT_PLAN, INCOMPLETE_PLAN, scripted_model
+from tests.conftest import CORRECT_PLAN, scripted_model
 
 if TYPE_CHECKING:
+    from pydantic_ai import Agent
+
     from hier_config_ai.deps import RemediationDeps
+
+
+def agent_tool_names(agent: Agent[RemediationDeps, AIPlanResponse]) -> list[str]:
+    """Return the tools an agent actually offers the model."""
+    return [
+        name for toolset in agent.toolsets for name in getattr(toolset, "tools", {})
+    ]
 
 
 def test_driver_description_states_the_real_indent_width() -> None:
@@ -115,10 +124,10 @@ def test_cache_sits_outside_rate_limiting() -> None:
     assert isinstance(agent.model.wrapped, RateLimitedModel)
 
 
-def test_system_prompt_points_the_model_at_its_tools() -> None:
-    """The prompt tells the model to verify before answering."""
-    assert "test_remediation" in SYSTEM_PROMPT
+def test_system_prompt_states_the_rules_that_always_apply() -> None:
+    """The base prompt covers what holds whether or not tools are offered."""
     assert "Never use tab\ncharacters" in SYSTEM_PROMPT
+    assert "you are told what is still wrong" in SYSTEM_PROMPT
 
 
 @pytest.mark.parametrize(
@@ -166,40 +175,30 @@ def test_platform_prefixes_reach_the_prompt() -> None:
     assert "`set`" in described
 
 
-@pytest.mark.parametrize(
-    ("mode", "expected"),
-    (
-        ("tool", AIPlanResponse),
-        ("native", NativeOutput),
-        ("prompted", PromptedOutput),
-    ),
-)
-def test_output_mode_selects_the_output_specification(
-    mode: OutputMode,
-    expected: type,
-) -> None:
-    """Each mode maps to the matching PydanticAI output specification.
-
-    Small self-hosted models are frequently unreliable at tool calling: they
-    nest the tool-call envelope inside the arguments, or emit the call as
-    plain text, and the run dies after exhausting its retries. Asking for a
-    JSON schema on the response instead makes them usable.
-    """
-    spec = output_spec(mode)
-    assert spec is expected if mode == "tool" else isinstance(spec, expected)
+def test_output_mode_selects_the_output_specification() -> None:
+    """Each mode maps to the matching PydanticAI output specification."""
+    assert output_spec("tool") is AIPlanResponse
+    assert isinstance(output_spec("native"), NativeOutput)
+    assert isinstance(output_spec("prompted"), PromptedOutput)
 
 
 def test_tools_can_be_turned_off() -> None:
-    """An agent can be built without tools for a model that cannot use them."""
+    """A model that cannot use tools is offered none, and not told to use any.
+
+    Instructing a model to call a tool it was never given is the confusion the
+    flag exists to avoid, so the prompt follows the tool list.
+    """
     agent = build_agent(scripted_model(CORRECT_PLAN), enable_tools=False)
-    assert agent is not None
+    assert agent_tool_names(agent) == []
 
 
-async def test_native_output_mode_still_validates(deps: RemediationDeps) -> None:
-    """Switching output mode does not switch off the convergence check."""
-    agent = build_agent(
-        scripted_model(INCOMPLETE_PLAN, CORRECT_PLAN),
-        output_mode="tool",
-    )
-    result = await agent.run("remediate", deps=deps)
-    assert result.output.plan == CORRECT_PLAN
+def test_tools_are_offered_by_default() -> None:
+    """The check-your-work tools are present unless turned off."""
+    agent = build_agent(scripted_model(CORRECT_PLAN))
+    assert agent_tool_names(agent) == ["test_remediation", "get_config_section"]
+
+
+def test_tool_instructions_are_separate_from_the_base_prompt() -> None:
+    """The tool paragraph is only added when there are tools to describe."""
+    assert "test_remediation" not in SYSTEM_PROMPT
+    assert "test_remediation" in TOOL_INSTRUCTIONS

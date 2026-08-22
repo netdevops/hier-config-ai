@@ -1,13 +1,17 @@
 """Run hier-config-ai against a local Ollama model.
 
-    ollama pull llama3.2:3b
-    poetry run python examples/ollama_quickstart.py llama3.2:3b
+    ollama pull qwen2.5-coder:7b
+    poetry run python examples/ollama_quickstart.py qwen2.5-coder:7b
 
 Two settings decide whether a small local model works at all.
 `output_mode="native"`, because these models are unreliable at tool
 calling and the default mode asks for structured output through one. And
 `temperature: 0.0`, because Ollama defaults to 0.8, at which the same
 prompt succeeds on one run and fails the next.
+
+Model size matters more than either. A 3B model is not dependable here:
+llama3.2:3b answers with the right commands but decorates them, wrapping
+each in markdown emphasis, and the plan is rejected. Use a 7B coder model.
 
 `timeout` is worth setting too. Without one a model that will never
 answer -- a reasoning model with no tool discipline, say -- blocks the
@@ -19,23 +23,26 @@ import sys
 
 from hier_config import HConfig, Platform
 from hier_config.models import MatchRule
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.models.ollama import OllamaModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
 from hier_config_ai import (
     AIRemediationExample,
     AIRemediationRule,
     AIWorkflowRemediation,
-    build_agent,
 )
 
-MODEL_NAME = sys.argv[1] if len(sys.argv) > 1 else "llama3.2:3b"
+MODEL_NAME = sys.argv[1] if len(sys.argv) > 1 else "qwen2.5-coder:7b"
 
 # Ollama speaks the OpenAI-compatible API, so it goes through OpenAIChatModel.
 # The api_key is a required placeholder; Ollama ignores it.
-model = OpenAIChatModel(
+# PydanticAI's own Ollama provider, not a bare OpenAI-compatible client. It
+# carries a per-model-family profile and tells the model layer that Ollama
+# supports a JSON schema on the response but not strict tool definitions --
+# exactly the settings that decide whether a small model can answer at all.
+model = OllamaModel(
     MODEL_NAME,
-    provider=OpenAIProvider(base_url="http://localhost:11434/v1", api_key="ollama"),
+    provider=OllamaProvider(base_url="http://localhost:11434/v1"),
 )
 
 running = HConfig.from_text(
@@ -48,13 +55,10 @@ intended = HConfig.from_text(
 )
 
 workflow = AIWorkflowRemediation(running, intended)
-workflow.set_agent(
-    build_agent(
-        model,
-        driver=running.driver,
-        settings={"temperature": 0.0, "timeout": 120.0},
-        output_mode="native",
-    )
+workflow.set_model(
+    model,
+    settings={"temperature": 0.0, "timeout": 120.0},
+    output_mode="native",
 )
 workflow.add_rule(
     AIRemediationRule(

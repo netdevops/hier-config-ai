@@ -19,7 +19,6 @@ from hier_config_ai.validation import (
     plan_converges,
     remaining_difference,
     review_patterns,
-    transient_commands,
     validate_plan,
 )
 from tests.conftest import (
@@ -71,12 +70,12 @@ def test_plan_adding_unwanted_config_is_detected(deps: RemediationDeps) -> None:
 
 def test_converged_plan_passes(deps: RemediationDeps) -> None:
     """The convergence check accepts a plan that reaches the target."""
-    assert check_converges(deps, CORRECT_PLAN, parse_plan(deps, CORRECT_PLAN)) is None
+    assert check_converges(deps, parse_plan(deps, CORRECT_PLAN)) is None
 
 
 def test_unconverged_plan_is_reported(deps: RemediationDeps) -> None:
     """The convergence check describes what an incomplete plan left undone."""
-    problem = check_converges(deps, INCOMPLETE_PLAN, parse_plan(deps, INCOMPLETE_PLAN))
+    problem = check_converges(deps, parse_plan(deps, INCOMPLETE_PLAN))
     assert problem is not None
     assert "does not produce the intended" in problem
 
@@ -328,60 +327,6 @@ ACL_TRAFFIC_SAFE = [
 ]
 
 
-def test_transient_scaffolding_is_allowed() -> None:
-    """A plan may add scaffolding and take it away again.
-
-    Resequencing an access list safely needs a temporary allow-all so the list
-    never denies live traffic mid-change. The plan is parsed into a tree before
-    comparison, which loses ordering, so both halves of that pair look like
-    configuration left behind. Their net effect is nothing.
-    """
-    assert plan_converges(acl_deps(), ACL_TRAFFIC_SAFE)
-
-
-def test_scaffolding_left_behind_is_still_caught() -> None:
-    """Forgetting the cleanup is rejected.
-
-    This is the failure that matters: a `permit ip any any` left in a live
-    access list is a hole, so the transient allowance must not become a way to
-    smuggle one through.
-    """
-    without_cleanup = [
-        line for line in ACL_TRAFFIC_SAFE if line.strip() != "no 1 permit ip any any"
-    ]
-    missing, unwanted = remaining_difference(acl_deps(), without_cleanup)
-    assert not missing
-    assert any("1 permit ip any any" in line for line in unwanted)
-
-
-def test_transient_commands_pairs_additions_with_their_removal() -> None:
-    """Only commands the plan itself negates count as transient."""
-    found = transient_commands(
-        ["  1 permit ip any any", "  no 1 permit ip any any", "  10 permit ip any any"],
-        "no ",
-    )
-    assert found == {"1 permit ip any any", "no 1 permit ip any any"}
-
-
-def test_unpaired_commands_are_not_transient() -> None:
-    """A removal with no matching addition is a real change, not scaffolding."""
-    assert transient_commands(["  no 12 permit ip any any"], "no ") == set()
-
-
-def test_validator_allows_scaffolding_end_to_end() -> None:
-    """The validator path honours scaffolding, not just the helper.
-
-    `check_converges` takes the parsed tree, which has lost command order, so
-    it needs the raw list too. Without it the traffic-safe access-list plan was
-    rejected by the validator even though the helper accepted it.
-    """
-    acl = acl_deps()
-    assert (
-        check_converges(acl, ACL_TRAFFIC_SAFE, parse_plan(acl, ACL_TRAFFIC_SAFE))
-        is None
-    )
-
-
 ACL_BARE_SEQUENCE = [
     "ip access-list extended TEST",
     "  1 permit ip any any",
@@ -394,24 +339,59 @@ ACL_BARE_SEQUENCE = [
 ]
 
 
-def test_scaffolding_removed_by_sequence_number_is_allowed() -> None:
-    """`no 1` pairs with the entry numbered 1, not just a repeat of its text."""
-    assert plan_converges(acl_deps(), ACL_BARE_SEQUENCE)
+@pytest.mark.parametrize("acl_plan", (ACL_TRAFFIC_SAFE, ACL_BARE_SEQUENCE))
+def test_scaffolding_is_allowed(acl_plan: list[str]) -> None:
+    """A plan may add scaffolding and take it away again.
+
+    Resequencing an access list safely needs a temporary allow-all so the list
+    never denies live traffic mid-change. Both spellings of the removal work:
+    repeating the command, and naming only its sequence number.
+    """
+    assert plan_converges(acl_deps(), acl_plan)
 
 
-def test_bare_sequence_removal_pairs_with_its_entry() -> None:
-    """A numeric removal matches the entry carrying that number."""
-    found = transient_commands(["  1 permit ip any any", "  no 1"], "no ")
-    assert found == {"1 permit ip any any", "no 1"}
+@pytest.mark.parametrize(
+    ("acl_plan", "cleanup"),
+    (
+        (ACL_TRAFFIC_SAFE, "no 1 permit ip any any"),
+        (ACL_BARE_SEQUENCE, "no 1"),
+    ),
+)
+def test_scaffolding_left_behind_is_caught(acl_plan: list[str], cleanup: str) -> None:
+    """Forgetting the cleanup is rejected.
 
-
-def test_removing_a_sequence_the_plan_never_added_is_a_real_change() -> None:
-    """`no 12` deletes existing config; it is not scaffolding."""
-    assert transient_commands(["  no 12"], "no ") == set()
-
-
-def test_bare_sequence_scaffolding_left_behind_is_caught() -> None:
-    """Dropping the `no 1` is still rejected."""
-    without_cleanup = [line for line in ACL_BARE_SEQUENCE if line.strip() != "no 1"]
+    This is the failure that matters: a `permit ip any any` left in a live
+    access list is a hole, so allowing scaffolding must not become a way to
+    smuggle one through.
+    """
+    without_cleanup = [line for line in acl_plan if line.strip() != cleanup]
     _, unwanted = remaining_difference(acl_deps(), without_cleanup)
     assert any("1 permit ip any any" in line for line in unwanted)
+
+
+def test_removing_then_re_adding_an_entry_does_not_converge() -> None:
+    """A plan that deletes an entry and puts it straight back has done nothing.
+
+    Order is what separates this from scaffolding. Matching the text for
+    add/remove pairs cannot tell the two apart, and accepted this plan even
+    though entry 12 was never renumbered to 20.
+    """
+    churn = [
+        "ip access-list extended TEST",
+        "  no 12 permit ip 10.0.0.0 0.0.0.7 any",
+        "  12 permit ip 10.0.0.0 0.0.0.7 any",
+        "  10 permit ip 10.0.1.0 0.0.0.255 any",
+        "  20 permit ip 10.0.0.0 0.0.0.7 any",
+    ]
+    _, unwanted = remaining_difference(acl_deps(), churn)
+    assert any("12 permit" in line for line in unwanted)
+
+
+def test_validator_allows_scaffolding_end_to_end() -> None:
+    """The validator path honours scaffolding, not just the helper.
+
+    The validator gates a run, so the scaffolding allowance has to hold on
+    that path and not only in the helper underneath it.
+    """
+    acl = acl_deps()
+    assert check_converges(acl, parse_plan(acl, ACL_TRAFFIC_SAFE)) is None
