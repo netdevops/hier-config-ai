@@ -50,22 +50,27 @@ intended = HConfig.from_text(
 )
 
 # Everything the custom workflow encodes in Python is stated here instead.
+#
+# `ip access-list resequence` is deliberately not mentioned. It renumbers every
+# entry by a fixed stride, which cannot produce this target: 12 has to become
+# 20 while a new 10 is inserted ahead of it. Naming a command the task cannot
+# use only invites the model to reach for it.
 RULE = AIRemediationRule(
     description=(
         "Rewrite the access list so its entries end up with the intended "
-        "sequence numbers using the command:\n"
-        "ip access-list resequence <acl_name> 10 10\n"
-        "An entry cannot be renumbered in place: remove the old one with "
+        "sequence numbers.\n"
+        "An entry cannot be renumbered in place. Delete it by number with "
         "'no <seq>', then add it back at its new number.\n"
         "The list must never deny live traffic while it is being rewritten. "
         "Add '1 permit ip any any' as the first command, and remove it with "
         "'no 1' as the last."
     ),
     lineage=(MatchRule(startswith="ip access-list"),),
+    # One access list throughout: the example is few-shot input, so anything
+    # incoherent in it is something the model is being taught to copy.
     example=AIRemediationExample(
         running_config="ip access-list extended EXAMPLE\n 15 permit ip any any",
         remediation_config=(
-            "ip access-list resequence TEST 10 10\n"
             "ip access-list extended EXAMPLE\n"
             "  1 permit ip any any\n"
             "  no 15\n"

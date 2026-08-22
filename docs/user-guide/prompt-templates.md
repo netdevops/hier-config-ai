@@ -61,6 +61,21 @@ template = PromptTemplate.from_file("prompts/remediation.txt")
     The template is rendered with `str.format`, so a literal brace must be
     doubled. A template containing a JSON example needs `{{` and `}}`.
 
+## Writing the example
+
+`AIRemediationExample` is few-shot input, not documentation. The model copies
+its shape, so anything incoherent in it is something you are teaching the model
+to do.
+
+Keep it internally consistent: one device, one section, one access list. An
+example that renumbers one access list and then edits a different one is not a
+harmless slip — it is a worked demonstration of the wrong thing.
+
+Do not name a command the task cannot use. Mentioning
+`ip access-list resequence` in a rule whose target needs individual entries
+renumbered invites the model to reach for a command that renumbers everything
+by a fixed stride, and it will spend retries discovering that it cannot.
+
 ## What not to put in a template
 
 Do not restate the output format. Structured output enforces it, and repeating
