@@ -120,9 +120,37 @@ def parse_plan(deps: RemediationDeps, plan: list[str]) -> HConfig:
     return HConfig.from_lines(deps.driver, plan)
 
 
+def transient_commands(plan: list[str], negation_prefix: str) -> set[str]:
+    """Return commands the plan adds and then removes again.
+
+    A remediation may need scaffolding that does not survive it. Resequencing
+    an access list is the standard case: a temporary `permit ip any any` goes
+    in first so the list never denies live traffic while its entries are
+    renumbered, and comes out at the end.
+
+    The plan is parsed into a tree before it is compared, which loses the order
+    the commands are applied in, so both halves of that pair look like
+    configuration the plan leaves behind. Their net effect on the device is
+    nothing, so they are excluded from the comparison.
+    """
+    stripped = [command.strip() for command in plan]
+    prefix = negation_prefix.strip()
+
+    transient: set[str] = set()
+    for command in stripped:
+        if not command.startswith(f"{prefix} "):
+            continue
+        added = command[len(prefix) :].strip()
+        if added in stripped:
+            transient.add(added)
+            transient.add(command)
+    return transient
+
+
 def difference_for_config(
     deps: RemediationDeps,
     plan_config: HConfig,
+    plan: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Compare what a parsed plan would produce against what it must produce.
 
@@ -152,6 +180,12 @@ def difference_for_config(
 
     missing = [line for line in deps.canonical_lines if line not in actual_set]
     unwanted = [line for line in actual if line not in deps.canonical_line_set]
+
+    if plan is not None:
+        transient = transient_commands(plan, deps.driver.negation_prefix)
+        if transient:
+            unwanted = [line for line in unwanted if line.strip() not in transient]
+
     return missing, unwanted
 
 
@@ -160,7 +194,11 @@ def remaining_difference(
     plan: list[str],
 ) -> tuple[list[str], list[str]]:
     """Parse `plan` and compare it against the intended configuration."""
-    return difference_for_config(deps, parse_plan(deps, plan))
+    missing, unwanted = difference_for_config(deps, parse_plan(deps, plan))
+    transient = transient_commands(plan, deps.driver.negation_prefix)
+    if transient:
+        unwanted = [line for line in unwanted if line.strip() not in transient]
+    return missing, unwanted
 
 
 def plan_converges(deps: RemediationDeps, plan: list[str]) -> bool:
@@ -236,9 +274,18 @@ def check_guardrails(deps: RemediationDeps, output: AIPlanResponse) -> str | Non
     return None
 
 
-def check_converges(deps: RemediationDeps, plan_config: HConfig) -> str | None:
-    """Reject a plan that does not turn the running config into the target."""
-    missing, unwanted = difference_for_config(deps, plan_config)
+def check_converges(
+    deps: RemediationDeps,
+    plan: list[str],
+    plan_config: HConfig,
+) -> str | None:
+    """Reject a plan that does not turn the running config into the target.
+
+    Takes the raw commands as well as the parsed tree, because the tree has
+    lost the order they are applied in and scaffolding can only be recognised
+    from the original list.
+    """
+    missing, unwanted = difference_for_config(deps, plan_config, plan)
     if not missing and not unwanted:
         return None
 
@@ -271,7 +318,7 @@ def validate_plan(
     if problem := check_guardrails(deps, output):
         reject(deps, problem)
 
-    if problem := check_converges(deps, plan_config):
+    if problem := check_converges(deps, output.plan, plan_config):
         reject(deps, problem)
 
     return output

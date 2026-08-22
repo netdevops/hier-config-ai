@@ -8,10 +8,6 @@ Two settings decide whether a small local model works at all.
 calling and the default mode asks for structured output through one. And
 `temperature: 0.0`, because Ollama defaults to 0.8, at which the same
 prompt succeeds on one run and fails the next.
-
-`timeout` is worth setting too. Without one a model that will never
-answer -- a reasoning model with no tool discipline, say -- blocks the
-run indefinitely rather than failing.
 """
 
 import asyncio
@@ -40,11 +36,11 @@ model = OpenAIChatModel(
 
 running = HConfig.from_text(
     Platform.CISCO_IOS,
-    "interface GigabitEthernet0/1\n shutdown\n",
+    "ip access-list extended TEST\n  12 permit ip 10.0.0.0 0.0.0.7 any",
 )
 intended = HConfig.from_text(
     Platform.CISCO_IOS,
-    "interface GigabitEthernet0/1\n ip address 10.0.1.1 255.255.255.0\n no shutdown\n",
+    "ip access-list extended TEST\n  10 permit ip 10.0.1.0 0.0.0.255 any\n  20 permit ip 10.0.0.0 0.0.0.7 any",
 )
 
 workflow = AIWorkflowRemediation(running, intended)
@@ -52,23 +48,31 @@ workflow.set_agent(
     build_agent(
         model,
         driver=running.driver,
-        settings={"temperature": 0.0, "timeout": 120.0},
+        settings={"temperature": 0.0},
         output_mode="native",
     )
 )
 workflow.add_rule(
     AIRemediationRule(
         description=(
-            "Bring the interface into line with the intended configuration: "
-            "enable it and set its IP address."
+            "Bring the access-list into line with the intended configuration: "
+            "- Use the `ip access-list resequence` command to resequence the sequence numbers"
+            "- Enable all traffice with `permit ip any any` with sequence 1"
+            "- At the end, remove sequence number 1"
         ),
-        lineage=(MatchRule(startswith="interface GigabitEthernet0/1"),),
+        lineage=(MatchRule(startswith="ip access-list"),),
         example=AIRemediationExample(
-            running_config="interface GigabitEthernet0/2\n shutdown",
+            running_config=(
+                "ip access-list extended TEST\n  14 permit ip 10.0.0.0 0.0.0.7 any"
+            ),
             remediation_config=(
-                "interface GigabitEthernet0/2\n"
-                "  no shutdown\n"
-                "  ip address 192.0.2.1 255.255.255.0"
+                "ip access-list resequence TEST 10 10\n"
+                "ip access-list extended TEST\n"
+                "  1 permit ip any any\n"
+                "  no 10\n"
+                "  10 permit ip 10.0.2.0 0.0.0.255 any\n"
+                "  20 permit ip 10.0.1.0 0.0.0.7 any\n"
+                "  no 1"
             ),
         ),
     )

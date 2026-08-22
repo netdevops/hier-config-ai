@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schema on the response instead, which they handle.
 - `enable_tools` on `build_agent()` and `set_model()`, for models that cannot
   cope with tools being offered.
+- Plans may add scaffolding and take it away again. Resequencing an access list
+  safely needs a temporary allow-all so the list never denies live traffic
+  mid-change; the plan is parsed into a tree before comparison, which loses
+  command order, so both halves of that pair looked like configuration left
+  behind and every traffic-safe plan was rejected. Scaffolding the plan itself
+  removes is now excluded from the comparison. Forgetting the cleanup is still
+  caught, so a `permit ip any any` cannot be smuggled into a live access list.
+- `examples/acl_resequencing.py` and `examples/ollama_quickstart.py`, both
+  runnable.
 
 ## [0.2.1a0] - 2026-08-21
 

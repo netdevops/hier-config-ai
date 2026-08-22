@@ -69,7 +69,7 @@ workflow.set_agent(
         model,
         driver=running.driver,
         output_mode="native",
-        settings={"temperature": 0.0},
+        settings={"temperature": 0.0, "timeout": 120.0},
     )
 )
 ```
@@ -91,8 +91,17 @@ workflow.set_agent(
     With both applied, `llama3.2:3b` and `qwen2.5-coder:7b` each produced a
     converging plan on the first request.
 
+    Set a `timeout` as well. Without one, a model that will never answer blocks
+    the run indefinitely instead of failing.
+
 `"prompted"` is a third option, which asks for JSON in the response text and
 parses it. Try it if a model supports neither of the others.
+
+!!! warning "Reasoning models"
+    A reasoning model such as `deepseek-r1` emits its thinking before its
+    answer, which fights structured output and can leave a run apparently
+    hung for a very long time. Prefer a straightforward instruct or coder
+    model locally.
 
 Whichever mode you choose, the plan is still validated: a local model cannot
 return configuration that fails the convergence check.

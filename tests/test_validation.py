@@ -19,6 +19,7 @@ from hier_config_ai.validation import (
     plan_converges,
     remaining_difference,
     review_patterns,
+    transient_commands,
     validate_plan,
 )
 from tests.conftest import (
@@ -70,12 +71,12 @@ def test_plan_adding_unwanted_config_is_detected(deps: RemediationDeps) -> None:
 
 def test_converged_plan_passes(deps: RemediationDeps) -> None:
     """The convergence check accepts a plan that reaches the target."""
-    assert check_converges(deps, parse_plan(deps, CORRECT_PLAN)) is None
+    assert check_converges(deps, CORRECT_PLAN, parse_plan(deps, CORRECT_PLAN)) is None
 
 
 def test_unconverged_plan_is_reported(deps: RemediationDeps) -> None:
     """The convergence check describes what an incomplete plan left undone."""
-    problem = check_converges(deps, parse_plan(deps, INCOMPLETE_PLAN))
+    problem = check_converges(deps, INCOMPLETE_PLAN, parse_plan(deps, INCOMPLETE_PLAN))
     assert problem is not None
     assert "does not produce the intended" in problem
 
@@ -313,3 +314,69 @@ def test_validate_plan_reports_unparseable_config(
     monkeypatch.setattr("hier_config_ai.validation.parse_plan", explode)
     with pytest.raises(ModelRetry, match="not valid configuration"):
         validate_plan(run_context(deps), plan(*CORRECT_PLAN))
+
+
+ACL_TRAFFIC_SAFE = [
+    "ip access-list extended TEST",
+    # A temporary allow-all so the list never denies live traffic while its
+    # entries are renumbered.
+    "  1 permit ip any any",
+    "  no 12 permit ip 10.0.0.0 0.0.0.7 any",
+    "  10 permit ip 10.0.1.0 0.0.0.255 any",
+    "  20 permit ip 10.0.0.0 0.0.0.7 any",
+    "  no 1 permit ip any any",
+]
+
+
+def test_transient_scaffolding_is_allowed() -> None:
+    """A plan may add scaffolding and take it away again.
+
+    Resequencing an access list safely needs a temporary allow-all so the list
+    never denies live traffic mid-change. The plan is parsed into a tree before
+    comparison, which loses ordering, so both halves of that pair look like
+    configuration left behind. Their net effect is nothing.
+    """
+    assert plan_converges(acl_deps(), ACL_TRAFFIC_SAFE)
+
+
+def test_scaffolding_left_behind_is_still_caught() -> None:
+    """Forgetting the cleanup is rejected.
+
+    This is the failure that matters: a `permit ip any any` left in a live
+    access list is a hole, so the transient allowance must not become a way to
+    smuggle one through.
+    """
+    without_cleanup = [
+        line for line in ACL_TRAFFIC_SAFE if line.strip() != "no 1 permit ip any any"
+    ]
+    missing, unwanted = remaining_difference(acl_deps(), without_cleanup)
+    assert not missing
+    assert any("1 permit ip any any" in line for line in unwanted)
+
+
+def test_transient_commands_pairs_additions_with_their_removal() -> None:
+    """Only commands the plan itself negates count as transient."""
+    found = transient_commands(
+        ["  1 permit ip any any", "  no 1 permit ip any any", "  10 permit ip any any"],
+        "no ",
+    )
+    assert found == {"1 permit ip any any", "no 1 permit ip any any"}
+
+
+def test_unpaired_commands_are_not_transient() -> None:
+    """A removal with no matching addition is a real change, not scaffolding."""
+    assert transient_commands(["  no 12 permit ip any any"], "no ") == set()
+
+
+def test_validator_allows_scaffolding_end_to_end() -> None:
+    """The validator path honours scaffolding, not just the helper.
+
+    `check_converges` takes the parsed tree, which has lost command order, so
+    it needs the raw list too. Without it the traffic-safe access-list plan was
+    rejected by the validator even though the helper accepted it.
+    """
+    acl = acl_deps()
+    assert (
+        check_converges(acl, ACL_TRAFFIC_SAFE, parse_plan(acl, ACL_TRAFFIC_SAFE))
+        is None
+    )

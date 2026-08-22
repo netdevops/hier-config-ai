@@ -64,6 +64,18 @@ is nothing to remediate, and asking anyway could only fail.
 `get_config_section` reaches the whole device configuration, not just the
 section under remediation — that is the point of having it.
 
+## Scaffolding
+
+A remediation may need commands that do not survive it. Resequencing an access
+list is the standard case: a temporary `1 permit ip any any` goes in first so
+the list never denies live traffic while its entries are renumbered, and comes
+out at the end.
+
+Commands the plan adds and then removes are excluded from the comparison, since
+their net effect on the device is nothing. Forgetting the cleanup is still
+rejected — a `permit ip any any` left in a live access list is a hole, and the
+allowance must not become a way to smuggle one through.
+
 ## Guardrails
 
 Commands that would take the device out of service are rejected outright and
