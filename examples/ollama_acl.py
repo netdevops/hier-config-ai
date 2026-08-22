@@ -10,7 +10,7 @@ the commands, and the plan is applied and re-diffed before it is returned, so a
 plan that does not produce the intended access list is rejected rather than
 handed back.
 
-    poetry run python examples/acl_resequencing.py qwen2.5-coder:7b
+    poetry run python examples/ollama_acl.py qwen2.5-coder:7b
 
 Use a capable model. Resequencing needs the model to work out that an entry
 cannot be renumbered in place; small local models often cannot, and will

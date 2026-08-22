@@ -77,8 +77,8 @@ ip access-list extended TEST
 ```
 
 The rule matches `ip access-list` generally rather than one list by name.
-`examples/acl_resequencing.py` runs this, verified against `qwen2.5-coder:7b` on
-a laptop — it does not need a frontier model.
+`examples/ollama_acl.py` runs this against a local Ollama model, verified with
+`qwen2.5-coder:7b` on a laptop — it does not need a frontier model.
 
 ## The plan is verified, not trusted
 

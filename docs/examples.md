@@ -4,8 +4,8 @@
 
 The case hier-config cannot resolve on its own, and the one its
 [custom workflows guide](https://hier-config.readthedocs.io/en/latest/user/custom-workflows/)
-solves with hand-written Python. Runnable as
-`examples/acl_resequencing.py`.
+solves with hand-written Python. `examples/ollama_acl.py` runs it against a
+local Ollama model.
 
 ```python
 import asyncio

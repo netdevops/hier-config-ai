@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still caught, so a `permit ip any any` cannot be smuggled into a live access
   list, and removing a sequence the plan never added still counts as a real
   deletion.
-- `examples/acl_resequencing.py` and `examples/ollama_quickstart.py`, both
+- `examples/ollama_acl.py` and `examples/ollama_quickstart.py`, both
   runnable.
 - "Replacing a Custom Workflow" documentation, putting access-list resequencing
   against the hand-written version from hier-config's custom workflows guide.

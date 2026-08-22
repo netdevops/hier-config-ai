@@ -115,9 +115,9 @@ ip access-list extended TEST
 The rule matches `ip access-list` generally rather than one list by name, and
 the renumbering is worked out per case instead of assuming a rounding rule.
 
-`examples/acl_resequencing.py` in the repository runs exactly this. It was
-verified end to end against `qwen2.5-coder:7b` on a laptop, so it does not need
-a frontier model.
+`examples/ollama_acl.py` in the repository runs exactly this against a local
+Ollama model. It was verified end to end with `qwen2.5-coder:7b` on a laptop, so
+it does not need a frontier model.
 
 ## Why the output can be trusted
 
