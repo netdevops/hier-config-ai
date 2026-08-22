@@ -6,6 +6,9 @@ test could see it: the fault was in the built wheel, not in the source.
 
 from __future__ import annotations
 
+from importlib.metadata import version
+
+import hier_config_ai
 from scripts.check_packaging import find_empty_extras
 
 BROKEN = """\
@@ -40,3 +43,12 @@ def test_correct_metadata_passes() -> None:
 def test_metadata_without_extras_passes() -> None:
     """A distribution with no extras has nothing to get wrong."""
     assert find_empty_extras("Name: x\nRequires-Dist: pydantic\n") == []
+
+
+def test_reported_version_matches_the_distribution() -> None:
+    """`__version__` comes from package metadata, so it cannot drift.
+
+    Releases bump `pyproject.toml` with `poetry version`, and nothing updated a
+    hardcoded literal, so the two disagreed after every release.
+    """
+    assert hier_config_ai.__version__ == version("hier-config-ai")

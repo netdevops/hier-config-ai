@@ -6,8 +6,7 @@ against hier-config before they are returned, so the model's output is verified
 rather than trusted.
 """
 
-__version__ = "0.2.0"
-
+from ._version import __version__
 from .agent import build_agent
 from .cache import ResponseCache
 from .consensus import consensus_plan

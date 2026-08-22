@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1a0] - 2026-08-21
+
+Prerelease of the 0.2.0 rewrite below.
+
 ## [0.2.0] - 2026-08-21
 
 Renamed from `hier-config-gpt` to `hier-config-ai`, and rebuilt on
@@ -266,7 +270,8 @@ better. Removing that layer also removed the bugs living in it.
 - Documentation with mkdocs
 - Apache 2.0 license
 
-[Unreleased]: https://github.com/netdevops/hier-config-ai/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/netdevops/hier-config-ai/compare/v0.2.1a0...HEAD
+[0.2.1a0]: https://github.com/netdevops/hier-config-ai/compare/v0.2.0...v0.2.1a0
 [0.2.0]: https://github.com/netdevops/hier-config-ai/compare/v0.1.1a0...v0.2.0
 [0.1.1a0]: https://github.com/netdevops/hier-config-ai/compare/v0.1.0...v0.1.1a0
 [0.1.0]: https://github.com/netdevops/hier-config-ai/releases/tag/v0.1.0
