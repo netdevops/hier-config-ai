@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- `search_knowledge` tool, offered to the model only when a retriever is
+  configured. Retrieval failures are reported back to the model rather than
+  raised: it can still answer without context.
+- Retrieved context is appended to a rejected plan's retry message. A rejection
+  names precisely what the model got wrong, which makes it the sharpest
+  retrieval query in a run — the opening query is written before anything is
+  known to have gone wrong.
+- `RemediationDeps.platform`, deriving the platform from the driver through
+  hier-config's registry.
+
+### Changed
+
+- `Retriever.search` and `Retriever.similar_remediations` accept
+  `Platform | str`. hier-config 4 registers custom platforms by name, and a
+  retriever restricted to enum members could not serve a device on a
+  user-registered driver.
+- `validate_plan`, `reject`, and `build_retry_message` are async, so the retry
+  path can retrieve. PydanticAI accepts an async output validator.
+
+### Added
 - `output_mode` on `build_agent()` and `set_model()`, selecting how the model
   returns structured output: `"tool"` (default), `"native"`, or `"prompted"`.
   Small self-hosted models are frequently unreliable at tool calling, so the

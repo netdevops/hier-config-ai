@@ -150,10 +150,9 @@ def workflow(
 class StubRetriever:
     """Retriever that records its calls and returns nothing.
 
-    0.2.0 ships no retrieval, so this exists to prove the seams accept one:
-    `RemediationDeps` carries it, `build_tools` is handed it, and the retry
-    message helper sees it. The signatures match `Retriever` exactly, so it
-    also checks that the protocol is implementable.
+    Returns nothing, so it exercises the "found no context" path. The
+    signatures match `Retriever` exactly, so it also checks that the protocol
+    is implementable.
     """
 
     def __init__(self) -> None:
@@ -163,7 +162,7 @@ class StubRetriever:
         self,
         query: str,
         *,
-        platform: Platform,
+        platform: Platform | str,
         k: int = 5,
     ) -> list[str]:
         """Record the query and return no context."""
@@ -175,7 +174,7 @@ class StubRetriever:
         running_config: HConfig,
         generated_config: HConfig,
         *,
-        platform: Platform,
+        platform: Platform | str,
         k: int = 3,
     ) -> list[AIRemediationExample]:
         """Record the call and return no examples."""
@@ -184,6 +183,79 @@ class StubRetriever:
             f"{len(list(generated_config.to_lines()))}:{k}"
         )
         return []
+
+
+class HelpfulRetriever:
+    """Retriever that records its queries and returns one usable snippet."""
+
+    def __init__(
+        self, snippet: str = "Use a temporary permit, then remove it."
+    ) -> None:
+        self.snippet = snippet
+        self.queries: list[str] = []
+        self.platforms: list[str] = []
+
+    async def search(
+        self,
+        query: str,
+        *,
+        platform: Platform | str,
+        k: int = 5,
+    ) -> list[str]:
+        """Record the query and answer with the configured snippet."""
+        self.queries.append(query)
+        self.platforms.append(str(platform))
+        return [self.snippet][:k]
+
+    async def similar_remediations(
+        self,
+        running_config: HConfig,
+        generated_config: HConfig,
+        *,
+        platform: Platform | str,
+        k: int = 3,
+    ) -> list[AIRemediationExample]:
+        """Record the call and return no examples."""
+        self.queries.append(
+            f"similar:{platform}:{len(list(running_config.to_lines()))}:"
+            f"{len(list(generated_config.to_lines()))}:{k}"
+        )
+        return []
+
+
+class FailingRetriever:
+    """Retriever that fails the way an unreachable store does.
+
+    Retrieval must never sink a run: the model can still answer without
+    context, and a second attempt without it is worth far more than no second
+    attempt.
+    """
+
+    def __init__(self, message: str = "connection refused") -> None:
+        self.message = message
+
+    async def search(
+        self,
+        query: str,
+        *,
+        platform: Platform | str,
+        k: int = 5,
+    ) -> list[str]:
+        """Fail, ignoring the query."""
+        del query, platform, k
+        raise RuntimeError(self.message)
+
+    async def similar_remediations(
+        self,
+        running_config: HConfig,
+        generated_config: HConfig,
+        *,
+        platform: Platform | str,
+        k: int = 3,
+    ) -> list[AIRemediationExample]:
+        """Fail, ignoring the configs."""
+        del running_config, generated_config, platform, k
+        raise RuntimeError(self.message)
 
 
 def failing_model(message: str = "provider unavailable") -> FunctionModel:

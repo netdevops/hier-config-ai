@@ -8,6 +8,7 @@ work instead of failing the run.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import defaultdict
 from functools import cache
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
 
     from .deps import RemediationDeps
     from .models import AIPlanResponse
+
+logger = logging.getLogger(__name__)
 
 # Commands that reload, wipe, or otherwise take a device out of service. Every
 # platform's spelling is matched on every platform: matching one too many is
@@ -103,22 +106,40 @@ def review_patterns(negation_prefix: str) -> tuple[re.Pattern[str], ...]:
     )
 
 
-def build_retry_message(deps: RemediationDeps, problem: str) -> str:
+async def build_retry_message(deps: RemediationDeps, problem: str) -> str:
     """Build the message returned to the model when a plan is rejected.
 
-    Every `ModelRetry` in this module routes through here. In 0.3.0 this
-    queries `deps.retriever` and appends the retrieved context: a failed
-    convergence check names precisely what the model got wrong, which makes it
-    the sharpest retrieval query available anywhere in the run. Until then
-    `problem` is returned unchanged.
+    Every `ModelRetry` in this module routes through here, and it is the best
+    retrieval query in the whole run: a rejection names precisely what the
+    model got wrong, where the opening query is written before anything is
+    known to have gone wrong.
+
+    Retrieval failures are swallowed. A second attempt without context is worth
+    far more than no second attempt, and the rejection itself is already useful
+    on its own.
     """
-    del deps
-    return problem
+    retriever = deps.retriever
+    platform = deps.platform
+    if retriever is None or platform is None:
+        return problem
+
+    try:
+        snippets = await retriever.search(problem, platform=platform)
+    # Retrieval is an enhancement to the retry, never a precondition for it.
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.debug("Retrieval failed while building a retry message", exc_info=True)
+        return problem
+
+    if not snippets:
+        return problem
+
+    context = "\n\n".join(f"- {snippet}" for snippet in snippets)
+    return f"{problem}\n\nThis may help:\n\n{context}"
 
 
-def reject(deps: RemediationDeps, problem: str) -> NoReturn:
+async def reject(deps: RemediationDeps, problem: str) -> NoReturn:
     """Hand a rejected plan back to the model."""
-    raise ModelRetry(build_retry_message(deps, problem))
+    raise ModelRetry(await build_retry_message(deps, problem))
 
 
 def parse_plan(deps: RemediationDeps, plan: list[str]) -> HConfig:
@@ -313,7 +334,7 @@ def check_converges(
     )
 
 
-def validate_plan(
+async def validate_plan(
     ctx: RunContext[RemediationDeps],
     output: AIPlanResponse,
 ) -> AIPlanResponse:
@@ -325,18 +346,20 @@ def validate_plan(
     deps = ctx.deps
 
     if problem := check_shape(output):
-        reject(deps, problem)
+        await reject(deps, problem)
 
     try:
         plan_config = parse_plan(deps, output.plan)
     # Any driver failure means the plan is not valid configuration.
     except Exception as exc:  # ruff: ignore[blind-except]  # pylint: disable=broad-exception-caught
-        reject(deps, f"The plan is not valid configuration for this platform: {exc}")
+        await reject(
+            deps, f"The plan is not valid configuration for this platform: {exc}"
+        )
 
     if problem := check_guardrails(deps, output):
-        reject(deps, problem)
+        await reject(deps, problem)
 
     if problem := check_converges(deps, output.plan, plan_config):
-        reject(deps, problem)
+        await reject(deps, problem)
 
     return output

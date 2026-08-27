@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from hier_config.models import MatchRule
 from pydantic_ai import RunContext
 from pydantic_ai.models.test import TestModel
@@ -11,17 +9,16 @@ from pydantic_ai.usage import RunUsage
 
 # Imported under an alias: pytest would otherwise collect `test_remediation`
 # as a test case rather than treating it as the tool under test.
-from hier_config_ai.tools import build_tools, get_config_section
+from hier_config_ai.deps import RemediationDeps
+from hier_config_ai.tools import build_tools, get_config_section, search_knowledge
 from hier_config_ai.tools import test_remediation as check_remediation
 from tests.conftest import (
     CORRECT_PLAN,
     INCOMPLETE_PLAN,
     INTERFACE,
+    FailingRetriever,
     StubRetriever,
 )
-
-if TYPE_CHECKING:
-    from hier_config_ai.deps import RemediationDeps
 
 
 def context(deps: RemediationDeps) -> RunContext[RemediationDeps]:
@@ -86,6 +83,52 @@ def test_unmatched_lineage_says_so(deps: RemediationDeps) -> None:
     assert "matched nothing" in section
 
 
-def test_retriever_reserves_a_place_for_search() -> None:
-    """A retriever is accepted now so 0.3.0 can add its tool without rework."""
-    assert len(build_tools(StubRetriever())) == 2
+def test_search_tool_appears_when_a_retriever_is_supplied() -> None:
+    """The retrieval tool is offered only when there is something to retrieve."""
+    assert [tool.name for tool in build_tools(StubRetriever())] == [
+        "test_remediation",
+        "get_config_section",
+        "search_knowledge",
+    ]
+
+
+async def test_search_knowledge_queries_the_retriever(
+    deps: RemediationDeps,
+) -> None:
+    """The query and the derived platform both reach the retriever."""
+    retriever = StubRetriever()
+    with_retriever = RemediationDeps(
+        running_config=deps.running_config,
+        generated_config=deps.generated_config,
+        retriever=retriever,
+    )
+
+    await search_knowledge(context(with_retriever), "resequence an ACL safely")
+
+    assert len(retriever.queries) == 1
+    assert "resequence an ACL safely" in retriever.queries[0]
+    # The platform is derived from the driver via hier-config's registry, not
+    # passed in. The fixture config is parsed with the GENERIC driver.
+    assert "GENERIC" in retriever.queries[0]
+
+
+async def test_search_knowledge_without_a_retriever_says_so(
+    deps: RemediationDeps,
+) -> None:
+    """Reachable if a caller builds the tool by hand; it must not raise."""
+    result = await search_knowledge(context(deps), "anything")
+    assert "No knowledge source" in result
+
+
+async def test_search_knowledge_survives_a_failing_retriever(
+    deps: RemediationDeps,
+) -> None:
+    """A retrieval failure is reported to the model, not raised."""
+    with_broken = RemediationDeps(
+        running_config=deps.running_config,
+        generated_config=deps.generated_config,
+        retriever=FailingRetriever(),
+    )
+    result = await search_knowledge(context(with_broken), "anything")
+    assert "lookup failed" in result
+    assert "connection refused" in result
