@@ -30,6 +30,14 @@ exactly what your commands would do to the device. Use `get_config_section` when
 you need to see more of the configuration than you were given.
 """
 
+# Appended only when a retriever is configured, so the prompt never advertises
+# a tool the agent was not given.
+RETRIEVAL_INSTRUCTIONS = """\
+Call `search_knowledge` when a change has a known safe procedure you should
+follow, or when you want to see how this kind of change was made before. Ask it
+the question you actually want answered rather than a bare keyword.
+"""
+
 SYSTEM_PROMPT = """\
 You are a network engineer producing configuration remediation for a live device.
 
@@ -186,8 +194,9 @@ def build_agent(  # ruff: ignore[too-many-arguments] - an options object would r
         settings: Model settings such as temperature and max tokens.
         cache: Reuse identical requests from this on-disk cache.
         rate_limiter: Hold requests back to stay within this budget.
-        retriever: Reserved for 0.3.0. Retrieval-backed tools appear only when
-            this is supplied.
+        retriever: Knowledge source for `search_knowledge` and for the context
+            appended to a rejected plan. The retrieval-backed tool appears only
+            when this is supplied.
         retries: How many times the model may correct a rejected plan.
         max_concurrency: Limit on concurrent runs of this agent.
         output_mode: How the model returns structured output. Use "native"
@@ -219,6 +228,8 @@ def build_agent(  # ruff: ignore[too-many-arguments] - an options object would r
     instructions = SYSTEM_PROMPT
     if tools:
         instructions = f"{instructions}\n{TOOL_INSTRUCTIONS}"
+    if tools and retriever is not None:
+        instructions = f"{instructions}\n{RETRIEVAL_INSTRUCTIONS}"
     if driver is not None:
         instructions = f"{instructions}\n{describe_driver(driver)}\n"
 

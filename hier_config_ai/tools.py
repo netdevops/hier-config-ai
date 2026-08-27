@@ -88,6 +88,46 @@ def get_config_section(
     )
 
 
+async def search_knowledge(
+    ctx: RunContext[RemediationDeps],
+    query: str,
+) -> str:
+    """Look up documentation and past changes relevant to this remediation.
+
+    Args:
+        ctx: The run context carrying the retriever and the configs.
+        query: What to look for, phrased as the question you want answered.
+            "resequence an extended ACL without dropping traffic" retrieves
+            better than "ACL".
+
+    Returns:
+        Relevant snippets, or a note saying nothing was found.
+
+    """
+    retriever = ctx.deps.retriever
+    if retriever is None:
+        return "No knowledge source is configured for this run."
+
+    platform = ctx.deps.platform
+    if platform is None:
+        return (
+            "The platform for this run could not be identified, so no lookup was made."
+        )
+
+    try:
+        snippets = await retriever.search(query, platform=platform)
+    # A retrieval failure must not sink the run. The model can still answer
+    # without context, and saying so is better than raising.
+    except Exception as exc:  # ruff: ignore[blind-except]  # pylint: disable=broad-exception-caught
+        return f"The knowledge lookup failed, so answer without it: {exc}"
+
+    if not snippets:
+        return f"Nothing found for {query!r}."
+
+    body = "\n\n".join(f"- {snippet}" for snippet in snippets)
+    return f"Found for {query!r}:\n\n{body}"
+
+
 def build_tools(retriever: Retriever | None = None) -> list[Tool[RemediationDeps]]:
     """Return the tools the agent should be given.
 
@@ -96,8 +136,10 @@ def build_tools(retriever: Retriever | None = None) -> list[Tool[RemediationDeps
     the model cannot use should never reach its tool list: it spends tokens and
     invites calls that can only fail.
     """
-    del retriever  # 0.3.0 appends `search_knowledge` when this is not None.
-    return [
+    tools: list[Tool[RemediationDeps]] = [
         Tool(test_remediation, takes_ctx=True),
         Tool(get_config_section, takes_ctx=True),
     ]
+    if retriever is not None:
+        tools.append(Tool(search_knowledge, takes_ctx=True))
+    return tools
