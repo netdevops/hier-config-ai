@@ -12,6 +12,7 @@ from pydantic_ai.usage import RunUsage
 from hier_config_ai.deps import RemediationDeps
 from hier_config_ai.models import AIPlanResponse
 from hier_config_ai.validation import (
+    build_retry_message,
     check_converges,
     check_guardrails,
     check_shape,
@@ -27,6 +28,8 @@ from tests.conftest import (
     CORRECT_PLAN,
     INCOMPLETE_PLAN,
     INTERFACE,
+    FailingRetriever,
+    HelpfulRetriever,
     StubRetriever,
 )
 
@@ -270,13 +273,13 @@ def test_acl_commands_in_a_different_order_still_pass() -> None:
     assert plan_converges(acl_deps(), reordered)
 
 
-def test_validate_plan_accepts_a_converging_plan(
+async def test_validate_plan_accepts_a_converging_plan(
     deps: RemediationDeps,
 ) -> None:
     """The validator returns the plan unchanged when it converges."""
     response = plan(*CORRECT_PLAN)
     ctx = run_context(deps)
-    assert validate_plan(ctx, response) is response
+    assert await validate_plan(ctx, response) is response
 
 
 @pytest.mark.parametrize(
@@ -288,17 +291,17 @@ def test_validate_plan_accepts_a_converging_plan(
         (tuple(INCOMPLETE_PLAN), "does not produce the intended"),
     ),
 )
-def test_validate_plan_sends_bad_plans_back(
+async def test_validate_plan_sends_bad_plans_back(
     deps: RemediationDeps,
     commands: tuple[str, ...],
     expected: str,
 ) -> None:
     """Each check hands its problem back through ModelRetry."""
     with pytest.raises(ModelRetry, match=expected):
-        validate_plan(run_context(deps), plan(*commands))
+        await validate_plan(run_context(deps), plan(*commands))
 
 
-def test_validate_plan_reports_unparseable_config(
+async def test_validate_plan_reports_unparseable_config(
     deps: RemediationDeps,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -314,7 +317,7 @@ def test_validate_plan_reports_unparseable_config(
 
     monkeypatch.setattr("hier_config_ai.validation.parse_plan", explode)
     with pytest.raises(ModelRetry, match="not valid configuration"):
-        validate_plan(run_context(deps), plan(*CORRECT_PLAN))
+        await validate_plan(run_context(deps), plan(*CORRECT_PLAN))
 
 
 ACL_TRAFFIC_SAFE = [
@@ -473,3 +476,45 @@ def test_sectional_overwrite_platforms_still_converge() -> None:
         "  description new",
     ]
     assert plan_converges(deps, overwrite_plan)
+
+
+async def test_retry_message_appends_retrieved_context(
+    deps: RemediationDeps,
+) -> None:
+    """A rejection is the sharpest retrieval query in the whole run.
+
+    It names precisely what the model got wrong, where the opening query is
+    written before anything is known to have gone wrong.
+    """
+    retriever = HelpfulRetriever()
+    with_retriever = RemediationDeps(
+        running_config=deps.running_config,
+        generated_config=deps.generated_config,
+        retriever=retriever,
+    )
+
+    message = await build_retry_message(with_retriever, "The plan is still missing X.")
+
+    assert "The plan is still missing X." in message
+    assert "temporary permit" in message
+    # The rejection itself is what was searched for.
+    assert retriever.queries == ["The plan is still missing X."]
+
+
+async def test_retry_message_is_unchanged_without_a_retriever(
+    deps: RemediationDeps,
+) -> None:
+    """No retriever means the rejection is returned exactly as written."""
+    assert await build_retry_message(deps, "problem") == "problem"
+
+
+async def test_retry_message_survives_a_failing_retriever(
+    deps: RemediationDeps,
+) -> None:
+    """Retrieval enhances a retry; it is never a precondition for one."""
+    with_broken = RemediationDeps(
+        running_config=deps.running_config,
+        generated_config=deps.generated_config,
+        retriever=FailingRetriever(),
+    )
+    assert await build_retry_message(with_broken, "problem") == "problem"

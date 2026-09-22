@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Protocol
 
-from hier_config import WorkflowRemediation
+from hier_config import (
+    WorkflowRemediation,
+    get_hconfig_driver,
+    get_registered_platforms,
+)
 
 if TYPE_CHECKING:
     from hier_config import HConfig
@@ -19,16 +23,23 @@ if TYPE_CHECKING:
 class Retriever(Protocol):
     """Supplies extra context to the model.
 
-    No implementation ships in 0.2.0. The protocol is declared now so that
-    `RemediationDeps.retriever` can be typed, because adding the field later
-    would change the signature of every tool and output validator.
+    Two things are worth retrieving. `search` answers "how does this
+    organisation do this kind of change", and is queried both when the plan is
+    first built and again when one is rejected. `similar_remediations` answers
+    "what happened last time", which is the context that compounds: a store
+    with six months of completed changes gives better answers than a new one.
+
+    `platform` is `Platform | str` rather than `Platform` because hier-config 4
+    registers custom platforms by name. A retriever that only accepted enum
+    members could not serve a device on a driver the user registered
+    themselves.
     """
 
     async def search(
         self,
         query: str,
         *,
-        platform: Platform,
+        platform: Platform | str,
         k: int = 5,
     ) -> list[str]:
         """Return context snippets relevant to `query` for `platform`."""
@@ -39,7 +50,7 @@ class Retriever(Protocol):
         running_config: HConfig,
         generated_config: HConfig,
         *,
-        platform: Platform,
+        platform: Platform | str,
         k: int = 3,
     ) -> list[AIRemediationExample]:
         """Return past remediations resembling this running/generated pair."""
@@ -78,6 +89,30 @@ class RemediationDeps:
     def driver(self) -> HConfigDriverBase:
         """The driver that parsed the running config."""
         return self.running_config.driver
+
+    @cached_property
+    def platform(self) -> Platform | str | None:
+        """The platform this config was parsed for, if it can be identified.
+
+        hier-config hands out a driver instance and keeps no back-reference to
+        the platform it was registered under, so this walks the registry
+        looking for the class that matches. Custom platforms registered by name
+        come back as plain strings, which is why every consumer of this accepts
+        `Platform | str`.
+
+        `None` when the driver was constructed directly rather than resolved
+        through the registry. Retrieval is skipped in that case rather than
+        guessed at: a wrong platform returns confidently irrelevant context,
+        which is worse than none.
+        """
+        driver_type = type(self.driver)
+        for name in get_registered_platforms():
+            # Exact type identity, not isinstance: a driver subclassed to
+            # customize one platform would otherwise match its parent's
+            # registration and retrieve context for the wrong platform.
+            if type(get_hconfig_driver(name)) is driver_type:  # pylint: disable=unidiomatic-typecheck
+                return name
+        return None
 
     @cached_property
     def canonical_future(self) -> HConfig:
