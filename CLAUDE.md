@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-hier-config-ai extends [hier-config](https://github.com/netdevops/hier-config) with LLM-driven network configuration remediation, built on [PydanticAI](https://ai.pydantic.dev/). It targets the config sections hier-config cannot resolve deterministically. Access-list resequencing is the canonical case and the documented flagship: `examples/ollama_acl.py` and `docs/user-guide/custom-workflows.md` put it against the hand-written workflow from hier-config's own guide. Python 3.10+, managed with Poetry.
+hier-config-ai extends [hier-config](https://github.com/netdevops/hier-config) with LLM-driven network configuration remediation, built on [PydanticAI](https://ai.pydantic.dev/). It targets the config sections hier-config cannot resolve deterministically. Access-list resequencing is the canonical case and the documented flagship: `examples/ollama_acl.py` and `docs/user-guide/custom-workflows.md` put it against the hand-written workflow from hier-config's own guide. Python 3.11+, managed with Poetry.
 
 The distinguishing feature is that plans are **verified, not trusted**: every plan is applied with `HConfig.future` and re-checked, and failures go back to the model through `ModelRetry`.
 
@@ -102,7 +102,7 @@ Lint hides runtime faults in this codebase: a sync function with `await` at its 
 
 ## CI
 
-GitHub Actions on Ubuntu across Python 3.10-3.14. Each job runs `scripts/build.py lint` and `scripts/build.py pytest --coverage`. A `packaging` job builds the wheel and runs `scripts/check_packaging.py`. A docs job runs `mkdocs build --strict`. All blocking.
+GitHub Actions on Ubuntu across Python 3.11-3.14. Each job runs `scripts/build.py lint` and `scripts/build.py pytest --coverage`. A `packaging` job builds the wheel and runs `scripts/check_packaging.py`. A docs job runs `mkdocs build --strict`. All blocking.
 
 Release: `prepare-release.yml` (admin-only `workflow_dispatch`) bumps the version, rotates the changelog, opens a release PR, and drafts a release; `release.yml` publishes to PyPI when that release is published.
 
