@@ -131,7 +131,11 @@ class RateLimiter:
         logger.warning("Rate limiter timed out after %.1fs", timeout)
         return False
 
-    async def aacquire(self, tokens: int = 1, timeout: float | None = None) -> bool:
+    async def aacquire(
+        self,
+        tokens: int = 1,
+        timeout: float | None = None,  # ruff: ignore[async-function-with-timeout] - the caller owns the deadline; this method just honors it
+    ) -> bool:
         """Take tokens without blocking the event loop.
 
         Args:

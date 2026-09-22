@@ -67,6 +67,6 @@ no plan at all, so nothing is returned until it provably reaches the target.
 
 ## Requirements
 
-- Python 3.10 or later
+- Python 3.11 or later
 - hier-config 4.0.0b1 or later
 - An API key for your chosen provider, or a self-hosted model
