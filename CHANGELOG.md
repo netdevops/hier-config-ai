@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The README, home page, quick start, and examples now lead with that case
   rather than a toy interface change.
 
+### Fixed
+- The driver description in the system prompt read only `rules.negation`, which
+  is empty on hier-config 4.0.0b4 (the former v3 negation lists were folded
+  into `all_negation_rules()`). Negation guidance such as the CISCO_IOS
+  `logging console` replacement was silently dropped from the prompt.
+
 ## [0.2.1a0] - 2026-08-21
 
 Prerelease of the 0.2.0 rewrite below.

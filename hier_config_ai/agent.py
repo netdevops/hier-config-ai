@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from hier_config.models import NegationStrategy
 from pydantic_ai import Agent, NativeOutput, PromptedOutput
@@ -120,6 +120,21 @@ def negation_bullet(rule: NegationRule) -> str:
     return f"- `{path}` is removed with the default negation"
 
 
+def _negation_rules(driver: HConfigDriverBase) -> list[NegationRule]:
+    """Return the driver's negation rules across hier-config 4.x spellings.
+
+    hier-config 4.0.0b4 folds the former v3 negation lists into a single
+    ordered `negation` list resolved through `all_negation_rules()`; earlier
+    4.0.0 betas expose the same rules directly as `rules.negation`. Reading
+    only `rules.negation` silently drops rules such as the CISCO_IOS
+    `logging console` REPLACE rule on 4.0.0b4.
+    """
+    all_rules = getattr(driver.rules, "all_negation_rules", None)
+    if all_rules is not None:
+        return cast("list[NegationRule]", all_rules())
+    return list(driver.rules.negation)
+
+
 def describe_driver(driver: HConfigDriverBase) -> str:
     """Summarise the platform's own rules for the system prompt.
 
@@ -149,7 +164,7 @@ def describe_driver(driver: HConfigDriverBase) -> str:
         " ".join(syntax),
         _bullets(
             "These commands are not removed the usual way:",
-            [negation_bullet(rule) for rule in rules.negation],
+            [negation_bullet(rule) for rule in _negation_rules(driver)],
         ),
         _bullets(
             "These commands overwrite the existing value rather than stacking, so "
